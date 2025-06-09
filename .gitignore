@@ -1,0 +1,7 @@
+
+Qwen*
+*.pyc
+*.png
+*.pt
+*.log
+wandb/*
