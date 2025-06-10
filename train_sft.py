@@ -1,7 +1,7 @@
 import os
 import rich
 import pyrallis
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from datasets import load_dataset, concatenate_datasets, Dataset
 from trl import SFTConfig, SFTTrainer
@@ -12,23 +12,17 @@ import time
 import numpy as np
 from utils import formatting_prompts_func, formatting_prompts_func_cot, compute_ttft, compute_ttft_from_tokens, formatting_func_general, formatting_func_kk, formatting_func_musique
 from utils import parse_cot_eval, save_evaluation_results
+from data_utils import DATASET_CONFIGS, load_single_dataset, THINK_ANSWER_TEMPLATE, make_conversation
 from functools import partial
-
-THINK_ANSWER_TEMPLATE = (
-    "A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant "
-    "first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning "
-    "process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., "
-    "<think> reasoning process here </think><answer> answer here </answer>"
-)
 
 @dataclass
 class ExperimentConfig:
     # Dataset configuration
-    datasets: List[str] = None  # List of datasets to use: ["kk", "musique"]
+    datasets: List[str] = field(default_factory=lambda: ["kk"])
     train_subset_size: Optional[int] = 100  
     test_subset_size: Optional[int] = None
-    kk_subset_size: Optional[int] = 50 
-    musique_subset_size: Optional[int] = 50 
+    kk_subset_size: Optional[int] = 100 
+    musique_subset_size: Optional[int] = None 
     
     # MuSiQue specific settings
     musique_max_context_length: int = 300
@@ -46,7 +40,10 @@ class ExperimentConfig:
     lora_r: int = 32
     lora_alpha: int = 32
     lora_dropout: float = 0.05
-    lora_target_modules: List[str] = None
+    lora_target_modules: List[str] = field(default_factory=lambda: [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj", "lm_head"
+    ])
     
     output_dir: str = None  
     learning_rate: float = 5e-5
@@ -60,7 +57,7 @@ class ExperimentConfig:
     max_seq_length: int = 256
     remove_unused_columns: bool = False
     
-    report_to: List[str] = None
+    report_to: List[str] = field(default_factory=lambda: ["tensorboard"])
     logging_steps: int = 10
     save_strategy: str = "steps"
     save_steps: int = 200
@@ -72,22 +69,6 @@ class ExperimentConfig:
     hf_cache_dir: str = "/scr/aliang80/hf_cache"
     
     def __post_init__(self):
-        if self.datasets is None:
-            self.datasets = ["kk", "musique"]  # Default to both datasets
-        if self.lora_target_modules is None:
-            self.lora_target_modules = [
-                "q_proj",
-                "k_proj", 
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-                "lm_head",
-            ]
-        if self.report_to is None:
-            self.report_to = ["tensorboard"]
-
         # Generate output directory name based on key parameters
         model_name = self.model_id.split("/")[-1]  
         datasets_str = "_".join(sorted(self.datasets))  
@@ -112,136 +93,13 @@ class ExperimentConfig:
         
         print(f"Generated output directory: {self.output_dir}")
 
-# Dataset configurations - easily extensible for new datasets
-DATASET_CONFIGS = {
-    "kk": {
-        "name": "K-and-K/knights-and-knaves",
-        "train_split": "train",
-        "test_split": "test",
-        "split_config": "2ppl",
-        "question_field": "quiz",
-        "answer_field": "solution_text",
-        "format_type": "kk"
-    },
-    "musique": {
-        "name": "dgslibisey/MuSiQue", 
-        "train_split": "train",
-        "test_split": "validation",
-        "split_config": None,
-        "question_field": "question",
-        "answer_field": "answer",
-        "format_type": "musique"
-    }
-}
-
-def load_single_dataset(dataset_key: str, config: 'ExperimentConfig'):
-    """Load a single dataset based on its configuration."""
-    if dataset_key not in DATASET_CONFIGS:
-        raise ValueError(f"Unknown dataset: {dataset_key}. Available: {list(DATASET_CONFIGS.keys())}")
-    
-    dataset_config = DATASET_CONFIGS[dataset_key]
-    dataset_name = dataset_config["name"]
-    
-    print(f"Loading {dataset_key} dataset...")
-    
-    # Load train split
-    if dataset_config["split_config"]:
-        train_dataset = load_dataset(dataset_name, dataset_config["train_split"], split=dataset_config["split_config"])
-        test_dataset = load_dataset(dataset_name, dataset_config["test_split"], split=dataset_config["split_config"])
-    else:
-        train_dataset = load_dataset(dataset_name, split=dataset_config["train_split"])
-        test_dataset = load_dataset(dataset_name, split=dataset_config["test_split"])
-    
-    # Apply dataset-specific subset size
-    subset_attr = f"{dataset_key}_subset_size"
-    if hasattr(config, subset_attr):
-        subset_size = getattr(config, subset_attr)
-        if subset_size is not None:
-            train_dataset = train_dataset.select(range(min(subset_size, len(train_dataset))))
-            test_dataset = test_dataset.select(range(min(subset_size, len(test_dataset))))
-    
-    # Add dataset identifier
-    train_dataset = train_dataset.add_column("dataset_source", [dataset_key] * len(train_dataset))
-    test_dataset = test_dataset.add_column("dataset_source", [dataset_key] * len(test_dataset))
-    return train_dataset, test_dataset, f"{dataset_key.upper()} - Train: {len(train_dataset)}, Test: {len(test_dataset)}"
-
-
-# def eval(config: ExperimentConfig, test_dataset: Dataset):
-#     trained_model = AutoModelForCausalLM.from_pretrained(
-#         config.output_dir,  
-#         torch_dtype=config.torch_dtype,
-#         device_map=config.device_map,
-#     )
-#     trained_tokenizer = AutoTokenizer.from_pretrained(config.output_dir)
-
-#     def generate_with_reasoning(sample):
-#         # Use the same formatting function as training with the same mode
-#         formatted_text = formatting_func_general(sample, mode=config.formatting_mode)
-        
-#         if "### Answer:" in formatted_text:
-#             prompt_text = formatted_text.split("### Answer:")[0] + "### Answer:"
-#         else:
-#             prompt_text = formatted_text
-
-#         # if cot, let's add the cot head
-#         cot_head = "Let's think step by step, by considering whether each person is lying and if that leads to contradiction."
-#         if config.formatting_mode == "cot":
-#             prompt_text = prompt_text + " " + cot_head
-        
-#         inputs = trained_tokenizer(prompt_text, return_tensors="pt").to(trained_model.device)
-
-#         start_time = time.time()
-#         with torch.no_grad():
-#             output_ids = trained_model.generate(**inputs, max_length=500, temperature=0.7, do_sample=True)
-#         end_time = time.time()
-
-#         generated_text = trained_tokenizer.decode(output_ids[0], skip_special_tokens=True)
-#         inference_duration = end_time - start_time
-#         num_input_tokens = inputs['input_ids'].shape[1]
-#         num_generated_tokens = output_ids.shape[1] - num_input_tokens
-
-#         ttft = compute_ttft_from_tokens(
-#             inputs['input_ids'][0], 
-#             output_ids[0], 
-#             trained_tokenizer
-#         )
-
-#         return generated_text, inference_duration, num_generated_tokens, ttft
-    
-#     # Run evaluation on test samples
-#     print(f"Evaluating on {len(test_dataset)} test samples...")
-    
-#     # Run evaluation on a few samples
-#     num_eval_samples = min(5, len(test_dataset))
-#     for i in range(num_eval_samples):
-#         sample = test_dataset[i]
-#         dataset_source = sample["dataset_source"]
-#         dataset_config = DATASET_CONFIGS[dataset_source]
-        
-#         question = sample[dataset_config["question_field"]]
-#         ground_truth = sample[dataset_config["answer_field"]]
-        
-#         print(f"\n{'='*50}")
-#         print(f"Sample {i+1} from {dataset_source}:")
-#         print(f"Question: {question}")
-#         print(f"Ground Truth: {ground_truth}")
-        
-#         # Get the full formatted training example for reference
-#         full_formatted = formatting_func_general(sample, mode=config.formatting_mode)
-#         print(f"Training format: {full_formatted[:200]}...")
-        
-#         generated_text, inference_time, num_tokens, ttft = generate_with_reasoning(sample)
-#         is_correct, wrong_reason, correct_ratio = parse_cot_eval(generated_text, ground_truth)
-#         print(f"Generated: {generated_text}")
-#         print(f"Inference time: {inference_time:.2f}s, Tokens: {num_tokens}, TTFT: {ttft:.4f}")
-#         print(f"Is correct: {is_correct}, Wrong reason: {wrong_reason}, Correct ratio: {correct_ratio}")
-
 def create_compute_metrics(config: ExperimentConfig, test_dataset: Dataset, tokenizer):
     """Create a compute_metrics function for SFTTrainer evaluation."""
     
     def compute_metrics(eval_preds):
         prediction_logits, labels = eval_preds
 
+        import ipdb; ipdb.set_trace()
         predicted_token_ids = np.argmax(prediction_logits, axis=-1)
         decoded_preds = tokenizer.batch_decode(predicted_token_ids, skip_special_tokens=True)
         
@@ -329,8 +187,6 @@ def train(config: ExperimentConfig):
         target_modules=config.lora_target_modules,
     )
 
-    response_template = "\n### Answer:\n"
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -340,14 +196,17 @@ def train(config: ExperimentConfig):
     print(f"Loading datasets: {config.datasets}")
 
     # Load all specified datasets using general approach
+    train_datasets_dict = {}
+    test_datasets_dict = {}
+    
     for dataset_key in config.datasets:
         train_data, test_data, info = load_single_dataset(dataset_key, config)
         if train_data is not None and test_data is not None:
-            datasets_to_combine.append((f"{dataset_key}_train", train_data))
-            datasets_to_combine.append((f"{dataset_key}_test", test_data))
+            train_datasets_dict[dataset_key] = train_data
+            test_datasets_dict[dataset_key] = test_data
             dataset_info.append(info)
 
-    if not datasets_to_combine:
+    if not train_datasets_dict and not test_datasets_dict:
         raise ValueError(f"No datasets were successfully loaded from: {config.datasets}")
 
     print("="*80)
@@ -357,20 +216,25 @@ def train(config: ExperimentConfig):
     for info in dataset_info:
         print(info)
 
-    # Combine datasets
-    train_datasets = []
-    test_datasets = []
+    # Create combined training dataset
+    if train_datasets_dict:
+        train_dataset = concatenate_datasets(list(train_datasets_dict.values()))
+        print(f"\nCombined train dataset size: {len(train_dataset)}")
+        print(f"Training datasets: {list(train_datasets_dict.keys())}")
+    else:
+        raise ValueError("No training datasets found!")
     
-    for name, dataset in datasets_to_combine:
-        if "train" in name:
-            train_datasets.append(dataset)
-        else:
-            test_datasets.append(dataset)
-
-    train_dataset = concatenate_datasets(train_datasets)
-    print(f"\nCombined train dataset size: {len(train_dataset)}")
-    test_dataset = concatenate_datasets(test_datasets)
+    # Keep test datasets separate but also create a combined version for the trainer
+    test_dataset = concatenate_datasets(list(test_datasets_dict.values()))
     print(f"Combined test dataset size: {len(test_dataset)}")
+    print(f"Test datasets: {list(test_datasets_dict.keys())}")
+    
+    # Print individual dataset sizes
+    print(f"\nIndividual dataset sizes:")
+    for dataset_key, dataset in train_datasets_dict.items():
+        print(f"  {dataset_key} train: {len(dataset)} samples")
+    for dataset_key, dataset in test_datasets_dict.items():
+        print(f"  {dataset_key} test: {len(dataset)} samples")
     
     # Apply global subset if specified
     if config.train_subset_size is not None:
@@ -384,8 +248,8 @@ def train(config: ExperimentConfig):
     print("\n" + "-"*40)
     print("COMBINED DATASET STRUCTURE")
     print("-"*40)
-    print(f"Train columns: {train_dataset.column_names}")
-    print(f"Train features: {train_dataset.features}")
+    print(f"Train columns: {train_dataset.column_names} \n\n")
+    print(f"Train features: {train_dataset.features} \n\n")
     
     if len(train_dataset) > 0:
         print("\nSample from combined train dataset:")
@@ -401,6 +265,20 @@ def train(config: ExperimentConfig):
                 print(f"  Type: {type(col_value).__name__}")
                 print(f"  Content: {col_value}")
 
+    # Show formatted training examples from each dataset type
+    print("\n" + "="*80)
+    print("FORMATTED TRAINING EXAMPLES BY DATASET")
+    print("="*80)
+    
+    for dataset_source, train_data in train_datasets_dict.items():
+        if len(train_data) > 0:
+            sample = train_data[0]
+            print(f"\n{dataset_source.upper()} Dataset - Formatted Example:")
+            print("-" * 60)
+            formatted_example = formatting_func_general(sample, mode=config.formatting_mode)
+            print(formatted_example)
+            print("-" * 60)
+
     print("="*80)
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -411,6 +289,7 @@ def train(config: ExperimentConfig):
     
     tokenizer = AutoTokenizer.from_pretrained(config.model_id)
     tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"  # Use left padding for decoder-only models
 
     if config.use_lora:
         model = get_peft_model(model, peft_config)
@@ -434,7 +313,7 @@ def train(config: ExperimentConfig):
         eval_strategy=config.eval_strategy,
         eval_steps=config.eval_steps,
         push_to_hub=config.push_to_hub,
-        # # predict_with_generate=True,
+        # predict_with_generate=True,
         # generation_max_length=500,
         # generation_num_beams=1,
         # generation_do_sample=True,

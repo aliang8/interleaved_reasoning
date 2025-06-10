@@ -1,32 +1,37 @@
 import os
 import rich
 import pyrallis
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets, Dataset
 from trl import GRPOConfig, GRPOTrainer
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
 import time
-from utils import formatting_prompts_func, formatting_prompts_func_cot, compute_ttft, compute_ttft_from_tokens
+from utils import formatting_prompts_func, formatting_prompts_func_cot, compute_ttft, compute_ttft_from_tokens, formatting_func_general, formatting_func_kk, formatting_func_musique, formatting_func_math
+from data_utils import DATASET_CONFIGS, load_single_dataset, THINK_ANSWER_TEMPLATE, make_conversation
 from rewards import format_reward, accuracy_reward, conditional_reward_function, reward_tracker
-
-THINK_ANSWER_TEMPLATE = (
-    "A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant "
-    "first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning "
-    "process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., "
-    "<think> reasoning process here </think><answer> answer here </answer>"
-)
+from evaluation_callback import CustomEvaluationCallback
+import wandb
 
 @dataclass
 class ExperimentConfig:
-    # Data configuration
-    dataset_name: str = "K-and-K/knights-and-knaves"
-    train_data: str = "train/people3_num1000.jsonl"
-    test_data: str = "test/people3_num1000.jsonl"
-    train_subset_size: Optional[int] = 10  # None for full dataset
-    test_subset_size: Optional[int] = None  # None for full dataset
+    datasets: List[str] = field(default_factory=lambda: ["kk"])  # List of datasets to use: ["kk", "musique"]
+    eval_only_datasets: List[str] = field(default_factory=lambda: ["math500", "gpqa"])  # Datasets only for evaluation
+    train_subset_size: Optional[int] = 10  
+    test_subset_size: Optional[int] = 10
+    kk_subset_size: Optional[int] = 100 
+    musique_subset_size: Optional[int] = 100 
+    math500_subset_size: Optional[int] = 50  # Subset size for MATH-500 evaluation
+    gpqa_subset_size: Optional[int] = 50  # Subset size for GPQA evaluation
+    
+    # MuSiQue specific settings
+    musique_max_context_length: int = 300
+    musique_max_paragraphs: int = 3
+    
+    # Evaluation configuration
+    formatting_mode: str = "func"  # "func" or "cot" for different reasoning styles
     
     # Model configuration
     model_id: str = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -38,48 +43,46 @@ class ExperimentConfig:
     lora_r: int = 32
     lora_alpha: int = 32
     lora_dropout: float = 0.05
-    lora_target_modules: List[str] = None
+    lora_target_modules: List[str] = field(default_factory=lambda: [
+        "q_proj", "k_proj", "v_proj", "o_proj", 
+        "gate_proj", "up_proj", "down_proj", "lm_head"
+    ])
     
     # GRPO Training configuration
-    output_dir: str = "Qwen2-0.5B-GRPO-test"
+    output_dir: str = None
     learning_rate: float = 1e-6
-    actor_learning_rate: float = 1e-6
-    critic_learning_rate: float = 1e-6
-    train_batch_size: int = 16
-    validation_batch_size: int = 2048
-    ppo_mini_batch_size: int = 32
-    ppo_micro_batch_size: int = 16
-    critic_micro_batch_size: int = 8
-    gradient_accumulation_steps: int = 16
-    num_train_epochs: int = 1
+    train_batch_size: int = 4
+    validation_batch_size: int = 16
+    gradient_accumulation_steps: int = 4
+    num_train_epochs: int = 100
     bf16: bool = True
     fp16: bool = False
     
     # GRPO specific parameters
     kl_coefficient: float = 0.001
     kl_loss_type: str = "low_variance_kl"
-    max_prompt_length: int = 3096
-    max_response_length: int = 2548
-    max_completion_length: int = 2548
+    max_prompt_length: int = 256
+    max_response_length: int = 256
+    max_completion_length: int = 256
     sampling_temperature: float = 0.8
-    num_generations: int = 8
-    num_samples_per_prompt: int = 8
+    num_generations: int = 4
+    num_samples_per_prompt: int = 4
     stable_training_threshold: float = 0.05
     critic_warmup_steps: int = 0
-    evaluation_frequency: int = 200
+    evaluation_frequency: int = 2
     tensor_model_parallel_size: int = 2
     remove_unused_columns: bool = False
     
     # Reward functions
-    reward_functions: List[str] = None
+    reward_functions: List[str] = field(default_factory=lambda: [format_reward, accuracy_reward])
     intermediate_reward_type: str = "partial_credit"
     stable_training_epsilon: float = 0.05
     base_reward: float = 1.0
     lambda_a: float = 1.0
     
     # Logging and saving
-    report_to: List[str] = None
-    logging_steps: int = 10
+    report_to: List[str] = field(default_factory=lambda: ["wandb"])
+    logging_steps: int = 1
     save_strategy: str = "steps"
     save_steps: int = 200
     push_to_hub: bool = False
@@ -88,73 +91,38 @@ class ExperimentConfig:
     seed: int = 42
     hf_cache_dir: str = "/scr/aliang80/hf_cache"
     
+    # Wandb 
+    wandb_tags: List[str] = field(default_factory=lambda: ["rl"])
+    wandb_notes: str = "RL training"
+    
     def __post_init__(self):
-        if self.lora_target_modules is None:
-            self.lora_target_modules = [
-                "q_proj",
-                "k_proj", 
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-                "lm_head",
-            ]
-        if self.reward_functions is None:
-            self.reward_functions = [format_reward, accuracy_reward, conditional_reward_function]
-        if self.report_to is None:
-            self.report_to = ["tensorboard"]
+        # Generate output directory name based on key parameters
+        if self.output_dir is None:
+            model_name = self.model_id.split("/")[-1]  
+            datasets_str = "_".join(sorted(self.datasets))  
+            lr_str = f"{self.learning_rate:.0e}".replace("-", "")  
+            lora_str = f"r{self.lora_r}_a{self.lora_alpha}" if self.use_lora else "no_lora"
+            
+            # Add subset information if using subsets
+            subset_info = ""
+            if self.train_subset_size is not None:
+                subset_info = f"_sub{self.train_subset_size}"
+            
+            self.output_dir = (
+                f"{model_name}_GRPO_"
+                f"{datasets_str}_"
+                f"{self.formatting_mode}_"
+                f"lr{lr_str}_"
+                f"ep{self.num_train_epochs}_"
+                f"bs{self.train_batch_size}_"
+                f"{lora_str}"
+                f"{subset_info}"
+            )
+            
+            print(f"Generated output directory: {self.output_dir}")
         
         global reward_tracker
         reward_tracker.epsilon = self.stable_training_epsilon
-
-def eval():
-    config = ExperimentConfig()
-
-    trained_model = AutoModelForCausalLM.from_pretrained(
-        config.model_id,
-        torch_dtype=config.torch_dtype,
-        device_map=config.device_map,
-    )
-    trained_tokenizer = AutoTokenizer.from_pretrained(config.model_id)
-
-    def generate_with_reasoning(prompt):
-        # Build the prompt from the dataset
-        prompt_text = " ".join(entry['content'] for entry in prompt)
-
-        # Tokenize and move to the same device as the model
-        inputs = trained_tokenizer(prompt_text, return_tensors="pt").to(trained_model.device)
-
-        # Generate text without gradients
-        start_time = time.time()
-        with torch.no_grad():
-            output_ids = trained_model.generate(**inputs, max_length=500)
-        end_time = time.time()
-
-        # Decode and extract model response
-        generated_text = trained_tokenizer.decode(output_ids[0], skip_special_tokens=True)
-
-        # Get inference time
-        inference_duration = end_time - start_time
-
-        # Get number of generated tokens
-        num_input_tokens = inputs['input_ids'].shape[1]
-        num_generated_tokens = output_ids.shape[1] - num_input_tokens
-
-        # Compute normalized TTFT
-        ttft = compute_ttft_from_tokens(
-            inputs['input_ids'][0], 
-            output_ids[0], 
-            trained_tokenizer
-        )
-
-        return generated_text, inference_duration, num_generated_tokens, ttft
-    
-    generated_text, inference_duration, num_generated_tokens, ttft = generate_with_reasoning(prompt)
-    print(f"Inference time: {inference_duration:.2f} seconds")
-    print(f"Generated tokens: {num_generated_tokens}")
-    print(f"Normalized TTFT: {ttft:.4f}")
-    print(generated_text)
 
 @pyrallis.wrap()
 def train(config: ExperimentConfig):
@@ -162,6 +130,17 @@ def train(config: ExperimentConfig):
 
     torch.manual_seed(config.seed)
     
+    # Set up wandb logging
+    if "wandb" in config.report_to:
+        run = wandb.init(
+            project="interleaved-reasoning",
+            name=config.output_dir,
+            config=config,
+            tags=config.wandb_tags,
+            notes=config.wandb_notes,
+            entity="clvr"
+        )
+
     peft_config = LoraConfig(
         r=config.lora_r,
         lora_alpha=config.lora_alpha,
@@ -176,26 +155,100 @@ def train(config: ExperimentConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_dataset = load_dataset(config.dataset_name, "train", split="2ppl")
-    test_dataset = load_dataset(config.dataset_name, "test", split="2ppl")
+    dataset_info = []
+
+    print(f"Loading training datasets: {config.datasets}")
+    print(f"Loading eval-only datasets: {config.eval_only_datasets}")
+
+    # Load training datasets (both train and test splits)
+    train_datasets_dict = {}
+    test_datasets_dict = {}
+    
+    for dataset_key in config.datasets:
+        train_data, test_data, info = load_single_dataset(dataset_key, config)
+        if train_data is not None and test_data is not None:
+            train_datasets_dict[dataset_key] = train_data
+            test_datasets_dict[dataset_key] = test_data
+            dataset_info.append(info)
+        elif test_data is not None:
+            # Handle case where dataset only has test split
+            test_datasets_dict[dataset_key] = test_data
+            dataset_info.append(info)
+            print(f"Warning: {dataset_key} has no training split, only added to evaluation")
+
+    # Load eval-only datasets (only test splits)
+    for dataset_key in config.eval_only_datasets:
+        train_data, test_data, info = load_single_dataset(dataset_key, config)
+        if test_data is not None:
+            test_datasets_dict[dataset_key] = test_data
+            dataset_info.append(info)
+            print(f"Added {dataset_key} to evaluation set only")
+
+    # Check that we have training datasets
+    if not train_datasets_dict:
+        raise ValueError("No training datasets found! Need at least one dataset with training split.")
     
     print("="*80)
     print("DATASET METADATA AND STRUCTURE")
     print("="*80)
     
-    print(f"Dataset name: {config.dataset_name}")
-    print(f"Train dataset size: {len(train_dataset)}")
-    print(f"Test dataset size: {len(test_dataset)}")
+    for info in dataset_info:
+        print(info)
     
+    # Print dataset information 
+    print(f"\nTraining datasets: {list(train_datasets_dict.keys())}")
+    print(f"Test datasets: {list(test_datasets_dict.keys())}")
+    
+    # Print individual dataset sizes
+    print(f"\nIndividual dataset sizes:")
+    for dataset_key, dataset in train_datasets_dict.items():
+        print(f"  {dataset_key} train: {len(dataset)} samples")
+    for dataset_key, dataset in test_datasets_dict.items():
+        print(f"  {dataset_key} test: {len(dataset)} samples")
+    
+    # Apply global subset to individual datasets if specified
+    if config.train_subset_size is not None:
+        for dataset_key in train_datasets_dict:
+            original_size = len(train_datasets_dict[dataset_key])
+            subset_size = min(config.train_subset_size, original_size)
+            train_datasets_dict[dataset_key] = train_datasets_dict[dataset_key].select(range(subset_size))
+            print(f"Applied train subset to {dataset_key}: {subset_size}/{original_size} samples")
+    
+            if dataset_key == "kk":
+                # replace solution_text field with solution field
+                train_datasets_dict[dataset_key] = train_datasets_dict[dataset_key].rename_column("solution", "tmp_solution")
+                train_datasets_dict[dataset_key] = train_datasets_dict[dataset_key].rename_column("solution_text", "solution")
+                train_datasets_dict[dataset_key] = train_datasets_dict[dataset_key].remove_columns("tmp_solution")
+
+    if config.test_subset_size is not None:
+        for dataset_key in test_datasets_dict:
+            original_size = len(test_datasets_dict[dataset_key])
+            subset_size = min(config.test_subset_size, original_size)
+            test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].select(range(subset_size))
+            print(f"Applied test subset to {dataset_key}: {subset_size}/{original_size} samples")
+
+            if dataset_key == "kk":
+                # replace solution_text field with solution field
+                test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].rename_column("solution", "tmp_solution")
+                test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].rename_column("solution_text", "solution")
+                test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].remove_columns("tmp_solution")
+
+
     print("\n" + "-"*40)
-    print("TRAIN DATASET STRUCTURE")
+    print("DATASET STRUCTURE")
     print("-"*40)
-    print(f"Column names: {train_dataset.column_names}")
-    print(f"Features: {train_dataset.features}")
     
-    if len(train_dataset) > 0:
-        print("\nSample from train dataset:")
-        sample = train_dataset[0]
+    # Show structure from first training dataset
+    first_train_key = list(train_datasets_dict.keys())[0]
+    first_train_dataset = train_datasets_dict[first_train_key]
+    
+    print(f"Sample from {first_train_key} train dataset:")
+    print(f"Columns: {first_train_dataset.column_names}")
+    print(f"Features: {first_train_dataset.features}")
+    
+    if len(first_train_dataset) > 0:
+        print(f"\nFirst sample content:")
+        sample = first_train_dataset[0]
         for col_name, col_value in sample.items():
             print(f"\n[{col_name}]:")
             if isinstance(col_value, str):
@@ -206,30 +259,38 @@ def train(config: ExperimentConfig):
             else:
                 print(f"  Type: {type(col_value).__name__}")
                 print(f"  Content: {col_value}")
-    
-    if 'quiz' in train_dataset.column_names:
-        quiz_lengths = [len(item) for item in train_dataset['quiz']]
-        print(f"Quiz length stats - Min: {min(quiz_lengths)}, Max: {max(quiz_lengths)}, Avg: {sum(quiz_lengths)/len(quiz_lengths):.1f}")
-    
-    if 'solution' in train_dataset.column_names:
-        solution_lengths = [len(str(item)) for item in train_dataset['solution']]
-        print(f"Solution length stats - Min: {min(solution_lengths)}, Max: {max(solution_lengths)}, Avg: {sum(solution_lengths)/len(solution_lengths):.1f}")
-    
-    if 'messages' in train_dataset.column_names:
-        msg_counts = [len(item) if isinstance(item, list) else 1 for item in train_dataset['messages']]
-        print(f"Messages count stats - Min: {min(msg_counts)}, Max: {max(msg_counts)}, Avg: {sum(msg_counts)/len(msg_counts):.1f}")
-    
-    print("="*80)
-    
-    if config.train_subset_size is not None:
-        train_dataset = train_dataset.select(range(config.train_subset_size))
-        print(f"Selected train subset: {len(train_dataset)} samples")
-    if config.test_subset_size is not None:
-        test_dataset = test_dataset.select(range(config.test_subset_size))
-        print(f"Selected test subset: {len(test_dataset)} samples")
 
-    print(f"\nFinal train dataset: {train_dataset}")
-    print(f"Final test dataset: {test_dataset}")
+    # Format datasets for conversation
+    print("\nFormatting datasets for conversation...")
+    train_datasets_dict = {dataset_key: dataset.map(make_conversation, desc=f"Formatting {dataset_key} train dataset") 
+                          for dataset_key, dataset in train_datasets_dict.items()}
+    test_datasets_dict = {dataset_key: dataset.map(make_conversation, desc=f"Formatting {dataset_key} test dataset") 
+                         for dataset_key, dataset in test_datasets_dict.items()}
+    
+    # Show sample conversation format
+    first_train_key = list(train_datasets_dict.keys())[0]
+    first_train_dataset = train_datasets_dict[first_train_key]
+    
+    print(f"\nFormatted dataset columns: {first_train_dataset.column_names}")
+    
+    if len(first_train_dataset) > 0:
+        print(f"\nSample conversation format from {first_train_key}:")
+        sample_prompt = first_train_dataset[0]['prompt']
+        for message in sample_prompt:
+            print(f"Role: {message['role']}")
+            content_preview = message['content'][:150] + "..." if len(message['content']) > 150 else message['content']
+            print(f"Content: {content_preview}")
+            print("-" * 40)
+    
+    # Create combined datasets for trainer (which requires Dataset objects, not dicts)
+    print("\nCreating combined datasets for trainer...")
+    train_dataset_combined = concatenate_datasets(list(train_datasets_dict.values()))
+    test_dataset_combined = concatenate_datasets(list(test_datasets_dict.values()))
+    
+    print(f"Combined train dataset: {len(train_dataset_combined)} samples")
+    print(f"Combined test dataset: {len(test_dataset_combined)} samples")
+
+    print("="*80)
 
     model = AutoModelForCausalLM.from_pretrained(
         config.model_id,
@@ -239,6 +300,7 @@ def train(config: ExperimentConfig):
     
     tokenizer = AutoTokenizer.from_pretrained(config.model_id)
     tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"  # Use left padding for decoder-only models
 
     if config.use_lora:
         model = get_peft_model(model, peft_config)
@@ -246,7 +308,7 @@ def train(config: ExperimentConfig):
 
     training_args = GRPOConfig(
         output_dir=config.output_dir,
-        learning_rate=config.actor_learning_rate,
+        learning_rate=config.learning_rate,
         remove_unused_columns=config.remove_unused_columns,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         num_train_epochs=config.num_train_epochs,
@@ -259,7 +321,8 @@ def train(config: ExperimentConfig):
         num_generations=config.num_generations,
         max_prompt_length=config.max_prompt_length,
         temperature=config.sampling_temperature,
-        # kl_coef=config.kl_coefficient,
+        beta=config.kl_coefficient,
+        num_iterations=1,
 
         report_to=config.report_to,
         logging_steps=config.logging_steps,
@@ -270,16 +333,28 @@ def train(config: ExperimentConfig):
         eval_steps=config.evaluation_frequency,
     )
 
+    eval_callback = CustomEvaluationCallback(
+        eval_dataset=None,
+        datasets_dict=test_datasets_dict,   
+        max_eval_samples=20,
+        batch_size=4  
+    )
+
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=config.reward_functions,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=test_dataset,
+        train_dataset=train_dataset_combined,
+        eval_dataset=test_dataset_combined,
+        callbacks=[eval_callback],
+        processing_class=tokenizer,
     )
 
     trainer.train()
     trainer.save_model(training_args.output_dir)
+
+    if "wandb" in config.report_to:
+        run.finish()
 
 if __name__ == "__main__":
     train()

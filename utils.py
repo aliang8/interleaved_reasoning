@@ -57,6 +57,58 @@ def formatting_func_musique(example, mode="func"):
     return text
 
 
+def formatting_func_math(example, mode="func"):
+    """Formatting function specifically for MATH dataset."""
+    problem = example["problem"]
+    solution = example["solution"]
+    
+    if mode == "func":
+        # Direct function mode
+        text = (
+            f"### Question: {problem}\n"
+            f"### Answer: <think>Let me solve this step by step.</think>\n"
+            f"<answer>{solution}</answer>"
+        )
+    elif mode == "cot":
+        # Chain of thought mode with more detailed reasoning
+        text = (
+            f"### Question: {problem}\n"
+            f"### Answer: <think>Let me approach this mathematical problem systematically, "
+            f"working through each step carefully to arrive at the correct solution.</think>\n"
+            f"<answer>{solution}</answer>"
+        )
+    else:
+        raise ValueError(f"Unknown mode: {mode}. Use 'func' or 'cot'")
+    
+    return text
+
+
+def formatting_func_gpqa(example, mode="func"):
+    """Formatting function specifically for GPQA dataset."""
+    question = example["question"]
+    answer = example["answer"]
+    
+    if mode == "func":
+        # Direct function mode
+        text = (
+            f"### Question: {question}\n"
+            f"### Answer: <think>Let me analyze this scientific question step by step.</think>\n"
+            f"<answer>{answer}</answer>"
+        )
+    elif mode == "cot":
+        # Chain of thought mode with more detailed reasoning
+        text = (
+            f"### Question: {question}\n"
+            f"### Answer: <think>Let me approach this scientific problem systematically, "
+            f"considering the relevant principles and working through the analysis carefully.</think>\n"
+            f"<answer>{answer}</answer>"
+        )
+    else:
+        raise ValueError(f"Unknown mode: {mode}. Use 'func' or 'cot'")
+    
+    return text
+
+
 def formatting_func_general(example, mode="func"):
     """General formatting function that dispatches based on dataset_source."""
     dataset_source = example["dataset_source"]
@@ -65,6 +117,10 @@ def formatting_func_general(example, mode="func"):
         return formatting_func_kk(example, mode)
     elif dataset_source == "musique":
         return formatting_func_musique(example, mode)
+    elif dataset_source == "math500":
+        return formatting_func_math(example, mode)
+    elif dataset_source == "gpqa":
+        return formatting_func_gpqa(example, mode)
     else:
         # Default formatting for unknown datasets
         question_field = "question" if "question" in example else "quiz"
@@ -95,7 +151,7 @@ def formatting_func_general(example, mode="func"):
 def formatting_prompts_func(example, eos_token):
     text = (
         system_instruction_no_reason
-        + f"\n\n### Question: {example['quiz']}\n### Answer:\nCONCLUSION:\n{example['solution_text_format']}"
+        + f"\n\n### Question: {example['quiz']}\n### Answer:\nCONCLUSION:\n{example['solution']}"
     )
     text += eos_token
     return text
@@ -108,7 +164,7 @@ def formatting_prompts_func_cot(example, eos_token):
     cot_foot = example["cot_foot"]
     text = (
         system_instruction
-        + f"\n\n### Question: {example['quiz']}\n### Answer: {cot_head} {cot_steps} {cot_foot}\nCONCLUSION:\n{example['solution_text_format']}"
+        + f"\n\n### Question: {example['quiz']}\n### Answer: {cot_head} {cot_steps} {cot_foot}\nCONCLUSION:\n{example['solution']}"
     )
     text += eos_token
     return text
@@ -346,7 +402,7 @@ def save_evaluation_results(config, detailed_results: list, accuracy: float, avg
             f.write(f"• TTFT Score: {result['ttft']:.3f}\n")
             if not result['is_correct']:
                 f.write(f"• Wrong Reason: {result['wrong_reason']}\n")
-            f.write(f"• Expected Conditions: {result['gold_conditions']}\n")
+            # f.write(f"• Expected Conditions: {result['gold_conditions']}\n")
             
             f.write("\n" + "="*80 + "\n\n")
     
