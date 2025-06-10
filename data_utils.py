@@ -24,7 +24,7 @@ DATASET_CONFIGS = {
         "test_split": "test",
         "split_config": "2ppl",
         "question_field": "quiz",
-        "answer_field": "solution",
+        "answer_field": "solution_text",
         "format_type": "kk"
     },
     "musique": {

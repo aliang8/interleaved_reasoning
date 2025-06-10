@@ -223,8 +223,11 @@ def accuracy_reward(completions, **kwargs):
         else:
             extracted_answer = content.strip()
         
-        grade, _ = verify_func([solution], [extracted_answer])
-        rewards.append(float(grade))
+        try:
+            grade, _ = verify_func([solution], [extracted_answer])
+            rewards.append(float(grade))
+        except Exception as e:
+            rewards.append(0.0)
 
     return rewards
 

@@ -5,3 +5,4 @@ Qwen*
 *.pt
 *.log
 wandb/*
+base_eval*
