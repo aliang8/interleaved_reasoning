@@ -42,7 +42,7 @@ DATASET_CONFIGS = {
         "test_split": "test",
         "split_config": None,
         "question_field": "problem",
-        "answer_field": "solution",
+        "answer_field": "answer",
         "format_type": "math"
     },
     "gpqa": {
@@ -89,7 +89,6 @@ def load_single_dataset(dataset_key: str, config) -> 'Tuple[Dataset, Dataset, st
     else:
         if dataset_key == "gpqa":
             test_dataset = load_dataset(dataset_name, dataset_config["test_split"])["train"]
-            import ipdb; ipdb.set_trace()
         else:
             test_dataset = load_dataset(dataset_name, split=dataset_config["test_split"])
     

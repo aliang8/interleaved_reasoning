@@ -233,7 +233,6 @@ def train(config: ExperimentConfig):
                 test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].rename_column("solution_text", "solution")
                 test_datasets_dict[dataset_key] = test_datasets_dict[dataset_key].remove_columns("tmp_solution")
 
-
     print("\n" + "-"*40)
     print("DATASET STRUCTURE")
     print("-"*40)
@@ -259,6 +258,9 @@ def train(config: ExperimentConfig):
             else:
                 print(f"  Type: {type(col_value).__name__}")
                 print(f"  Content: {col_value}")
+
+    # Print question and answer fields for one example from each dataset
+    print_dataset_examples(train_datasets_dict, test_datasets_dict)
 
     # Format datasets for conversation
     print("\nFormatting datasets for conversation...")
@@ -355,6 +357,69 @@ def train(config: ExperimentConfig):
 
     if "wandb" in config.report_to:
         run.finish()
+
+def print_dataset_examples(train_datasets_dict, test_datasets_dict):
+    """
+    Print question and answer fields for one example from each dataset.
+    Uses DATASET_CONFIGS to get the correct field names.
+    """
+    print("\n" + "="*60)
+    print("QUESTION AND ANSWER FIELDS FOR EACH DATASET")
+    print("="*60)
+    
+    # Print examples from training datasets
+    for dataset_key, dataset in train_datasets_dict.items():
+        if len(dataset) > 0:
+            print(f"\n{dataset_key.upper()} TRAIN DATASET:")
+            print("-" * 40)
+            sample = dataset[0]
+            
+            # Get field names from DATASET_CONFIGS
+            dataset_config = DATASET_CONFIGS[dataset_key]
+            question_field = dataset_config["question_field"]
+            answer_field = dataset_config["answer_field"]
+            
+            print(f"Question field: '{question_field}'")
+            if question_field in sample:
+                question_preview = sample[question_field][:300] + "..." if len(sample[question_field]) > 300 else sample[question_field]
+                print(f"Question content: {question_preview}")
+            else:
+                print(f"Question field '{question_field}' not found in sample")
+            
+            print(f"\nAnswer field: '{answer_field}'")
+            if answer_field in sample:
+                answer_preview = sample[answer_field][:200] + "..." if len(sample[answer_field]) > 200 else sample[answer_field]
+                print(f"Answer content: {answer_preview}")
+            else:
+                print(f"Answer field '{answer_field}' not found in sample")
+    
+    # Print examples from test datasets (eval-only datasets)
+    for dataset_key, dataset in test_datasets_dict.items():
+        if dataset_key not in train_datasets_dict and len(dataset) > 0:
+            print(f"\n{dataset_key.upper()} TEST DATASET (eval-only):")
+            print("-" * 40)
+            sample = dataset[0]
+            
+            # Get field names from DATASET_CONFIGS
+            dataset_config = DATASET_CONFIGS[dataset_key]
+            question_field = dataset_config["question_field"]
+            answer_field = dataset_config["answer_field"]
+            
+            print(f"Question field: '{question_field}'")
+            if question_field in sample:
+                question_preview = sample[question_field][:300] + "..." if len(sample[question_field]) > 300 else sample[question_field]
+                print(f"Question content: {question_preview}")
+            else:
+                print(f"Question field '{question_field}' not found in sample")
+            
+            print(f"\nAnswer field: '{answer_field}'")
+            if answer_field in sample:
+                answer_preview = sample[answer_field][:200] + "..." if len(sample[answer_field]) > 200 else sample[answer_field]
+                print(f"Answer content: {answer_preview}")
+            else:
+                print(f"Answer field '{answer_field}' not found in sample")
+
+    print("\n" + "="*60)
 
 if __name__ == "__main__":
     train()
