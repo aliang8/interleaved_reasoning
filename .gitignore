@@ -6,3 +6,5 @@ Qwen*
 *.log
 wandb/*
 base_eval*
+checkpoints/*
+outputs/*
