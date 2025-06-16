@@ -8,3 +8,9 @@ wandb/*
 base_eval*
 checkpoints/*
 outputs/*
+Recall/*
+*.jsonl
+*.zip
+*.yaml
+mcp-server-demo/*
+retrieval-corpus/*

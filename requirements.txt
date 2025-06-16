@@ -1,0 +1,31 @@
+modelscope 
+addict
+lm_eval[wandb]
+ipdb
+gpustat
+omegaconf
+tensordict
+flash_attn==2.5.8
+hf_transfer
+
+# verl
+accelerate
+codetiming
+datasets
+dill
+hydra-core
+numpy
+pandas
+peft
+pyarrow>=15.0.0
+pybind11
+pylatexenc
+ray[default]>=2.10
+tensordict<=0.6.2
+torchdata
+transformers
+vllm==0.8.4
+wandb
+
+# mcp
+wikipedia-mcp

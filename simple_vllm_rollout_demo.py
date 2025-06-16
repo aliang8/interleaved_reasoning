@@ -29,7 +29,42 @@ from verl.workers.fsdp_workers import ActorRolloutRefWorker
 from verl import DataProto
 
 
-def create_prompts_dataproto(tokenizer, questions, max_prompt_length=256):
+TOOL_USE_TEMPLATE = (
+                    "A conversation between User and Assistant. The user asks a question, "
+                    "and the assistant solves it. The assistant first thinks about the "
+                    "reasoning process in the mind and then provides the user with the "
+                    "answer. During thinking, the assistant can invoke the Wikipedia "
+                    "search tool to search for fact information about specific topics "
+                    "if needed. The reasoning process and answer are enclosed within "
+                    "<think> and </think> tags respectively, and the search query and "
+                    "result are enclosed within <search> and </search> tags respectively. "
+                    "For example, <think>This is the reasoning process. <search> search "
+                    "query here </search> <search> search result here </search> This is the "
+                    "reasoning process.</think> The final answer is \\boxed{answer here}. "
+                    "The final exact answer is enclosed within \\boxed{} with latex format."
+                )
+
+TOOL_USE_AND_INTERLEAVE_TEMPLATE = (
+    "A conversation between User and Assistant. The user asks a question, "
+    "and the assistant solves it. The assistant first thinks about the "
+    "reasoning process in the mind and then provides the user with the "
+    "answer. During thinking, the assistant can invoke the Wikipedia "
+    "search tool to search for fact information about specific topics "
+    "if needed. The reasoning process and answer are enclosed within "
+    "<think> and </think> tags respectively, and the search query and "
+    "result are enclosed within <search> and </search> tags respectively. "
+    "You conduct your reasoning within <think></think> and share partial "
+    "answers within <answer></answer> as soon as you become confident about "
+    "the intermediate results. You continue this pattern of "
+    "<think></think><answer></answer><think></think><answer></answer> until "
+    "you reach the final answer. For example, <think>This is the reasoning "
+    "process. <search> search query here </search> <search> search result "
+    "here </search> This is the reasoning process.</think> The final answer "
+    "is \\boxed{answer here}. The final exact answer is enclosed within "
+    "\\boxed{} with latex format."
+)
+
+def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
     """
     Create a DataProto object with prompts formatted for ActorRolloutRefWorker.
     
@@ -43,11 +78,39 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=256):
     """
     batch_size = len(questions)
     
-    # Tokenize the questions with left padding (vLLM requirement)
+    # Apply chat template to format questions properly for instruction model
+    formatted_prompts = []
+    for question in questions:
+        # Format as a conversation with user role
+        messages = [
+            {
+                "role": "system", 
+                "content": TOOL_USE_AND_INTERLEAVE_TEMPLATE
+            },
+            {"role": "user", "content": question}
+        ]
+        
+        # Apply the chat template
+        try:
+            formatted_prompt = tokenizer.apply_chat_template(
+                messages, 
+                tokenize=False, 
+                add_generation_prompt=True  # Add assistant prompt for generation
+            )
+            formatted_prompts.append(formatted_prompt)
+            print(f"Original: {question}")
+            print(f"Formatted: {formatted_prompt}")
+            print("---")
+        except Exception as e:
+            print(f"Warning: Could not apply chat template: {e}")
+            print("Falling back to raw question format")
+            formatted_prompts.append(question)
+    
+    # Tokenize the formatted prompts with left padding (vLLM requirement)
     tokenizer.padding_side = "left"
     
     # First tokenize without padding to check lengths
-    encoded_no_pad = tokenizer(questions, return_tensors="pt", add_special_tokens=True)
+    encoded_no_pad = tokenizer(formatted_prompts, return_tensors="pt", add_special_tokens=True)
     
     # Check if any sequence is longer than max_prompt_length
     max_actual_length = encoded_no_pad["input_ids"].shape[1]
@@ -57,7 +120,7 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=256):
     
     # Now tokenize with proper padding and truncation
     encoded = tokenizer(
-        questions,
+        formatted_prompts,
         padding="max_length",
         max_length=max_prompt_length,
         truncation=True,
@@ -176,19 +239,19 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
         
         # Rollout configuration - this is where vLLM settings go
         "rollout": {
-            "name": "vllm_with_tool",
+            "name": "vllm_with_mcp",
             "mode": "sync",
             
             # Basic rollout settings
             "prompt_length": prompt_length,
-            "response_length": response_length,
+            "response_length": 5000,
             "max_model_len": None,
             "n": 5,  # Number of responses per prompt
             
             # vLLM specific settings
             "tensor_model_parallel_size": 1,
             "dtype": "bfloat16",
-            "gpu_memory_utilization": 0.3,
+            "gpu_memory_utilization": 0.8,
             "enforce_eager": False,
             "free_cache_engine": False,
             "load_format": "auto",
@@ -210,6 +273,11 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
             "log_prob_micro_batch_size_per_gpu": 2,
             "log_prob_max_token_len_per_gpu": 1024,
             "log_prob_use_dynamic_bsz": False,
+
+            # mcp settings
+            "mcp_mode": "direct_article",
+            "mcp_timeout": 10,
+            "mcp_max_article_tokens": 2000,
             
             # Validation settings
             "val_kwargs": {
@@ -217,7 +285,7 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
                 "top_p": 1.0,
                 "temperature": 0,
                 "n": 1,
-                "do_sample": False,
+                "do_sample": True,
             },
             
             # Engine kwargs
@@ -267,7 +335,7 @@ def main():
         return False
     
     # Model setup
-    model_path = "Qwen/Qwen2.5-0.5B-Instruct"
+    model_path = "Qwen/Qwen2.5-7B-Instruct"
     print(f"Loading model: {model_path}")
     
     # Load tokenizer for prompt preparation
@@ -312,9 +380,12 @@ def main():
     
     # Prepare sample questions
     questions = [
-        "You have access to search tools. Please search for information about the capital of France using <tool_call>query</tool_call> format.",
-        # "Explain artificial intelligence in one sentence.",
-        # "What is 2 + 2?",
+        # "Who was president of the United States in the year that Citibank was founded?",
+        # "Which cities hosted the Olympics in 1988, and where were the opening ceremonies held in each city?"
+        # "Which actor in the movie Nadja has a Golden Palm Star on the Walk of Stars in Palm Springs, California?"
+        "How many years old was The Real Housewives of New York City franchise when Jenna Lyons premiered on the show?"
+        # "Explain the concept of machine learning in simple terms.",
+        # "Write a short poem about the ocean.",
     ]
     
     print(f"\nPreparing {len(questions)} prompts...")
@@ -353,7 +424,6 @@ def main():
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Generate sequences through the worker
         output = worker.generate_sequences(prompts)
         print("✅ Generation completed!")
         
