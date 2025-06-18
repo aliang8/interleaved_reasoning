@@ -5,7 +5,7 @@ ipdb
 gpustat
 omegaconf
 tensordict
-flash_attn==2.5.8
+# flash_attn==2.5.8
 hf_transfer
 
 # verl
@@ -26,6 +26,11 @@ torchdata
 transformers
 vllm==0.8.4
 wandb
+matplotlib
+seaborn
 
 # mcp
 wikipedia-mcp
+
+flash-attn==2.5.0
+hf_transfer

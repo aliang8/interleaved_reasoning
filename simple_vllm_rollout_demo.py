@@ -17,6 +17,11 @@ import numpy as np
 from transformers import AutoTokenizer, AutoConfig
 from omegaconf import DictConfig
 from tensordict import TensorDict
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import re
+import string
 
 # Set environment variables for distributed setup (single GPU)
 os.environ.setdefault("RANK", "0")
@@ -27,44 +32,10 @@ os.environ.setdefault("MASTER_PORT", "12355")
 
 from verl.workers.fsdp_workers import ActorRolloutRefWorker
 from verl import DataProto
+from verl.verl.utils.templates import format_system_message
 
 
-TOOL_USE_TEMPLATE = (
-                    "A conversation between User and Assistant. The user asks a question, "
-                    "and the assistant solves it. The assistant first thinks about the "
-                    "reasoning process in the mind and then provides the user with the "
-                    "answer. During thinking, the assistant can invoke the Wikipedia "
-                    "search tool to search for fact information about specific topics "
-                    "if needed. The reasoning process and answer are enclosed within "
-                    "<think> and </think> tags respectively, and the search query and "
-                    "result are enclosed within <search> and </search> tags respectively. "
-                    "For example, <think>This is the reasoning process. <search> search "
-                    "query here </search> <search> search result here </search> This is the "
-                    "reasoning process.</think> The final answer is \\boxed{answer here}. "
-                    "The final exact answer is enclosed within \\boxed{} with latex format."
-                )
-
-TOOL_USE_AND_INTERLEAVE_TEMPLATE = (
-    "A conversation between User and Assistant. The user asks a question, "
-    "and the assistant solves it. The assistant first thinks about the "
-    "reasoning process in the mind and then provides the user with the "
-    "answer. During thinking, the assistant can invoke the Wikipedia "
-    "search tool to search for fact information about specific topics "
-    "if needed. The reasoning process and answer are enclosed within "
-    "<think> and </think> tags respectively, and the search query and "
-    "result are enclosed within <search> and </search> tags respectively. "
-    "You conduct your reasoning within <think></think> and share partial "
-    "answers within <answer></answer> as soon as you become confident about "
-    "the intermediate results. You continue this pattern of "
-    "<think></think><answer></answer><think></think><answer></answer> until "
-    "you reach the final answer. For example, <think>This is the reasoning "
-    "process. <search> search query here </search> <search> search result "
-    "here </search> This is the reasoning process.</think> The final answer "
-    "is \\boxed{answer here}. The final exact answer is enclosed within "
-    "\\boxed{} with latex format."
-)
-
-def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
+def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024, template_type="confidence"):
     """
     Create a DataProto object with prompts formatted for ActorRolloutRefWorker.
     
@@ -72,6 +43,7 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
         tokenizer: HuggingFace tokenizer
         questions: List of question strings
         max_prompt_length: Maximum length for prompt padding
+        template_type: Type of system template to use ("tool", "tool_interleaved", "confidence", "default")
         
     Returns:
         DataProto object ready for generate_sequences()
@@ -81,12 +53,9 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
     # Apply chat template to format questions properly for instruction model
     formatted_prompts = []
     for question in questions:
-        # Format as a conversation with user role
+        # Format as a conversation with configurable system template
         messages = [
-            {
-                "role": "system", 
-                "content": TOOL_USE_AND_INTERLEAVE_TEMPLATE
-            },
+            format_system_message(template_type),
             {"role": "user", "content": question}
         ]
         
@@ -99,6 +68,7 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
             )
             formatted_prompts.append(formatted_prompt)
             print(f"Original: {question}")
+            print(f"Template: {template_type}")
             print(f"Formatted: {formatted_prompt}")
             print("---")
         except Exception as e:
@@ -108,15 +78,6 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
     
     # Tokenize the formatted prompts with left padding (vLLM requirement)
     tokenizer.padding_side = "left"
-    
-    # First tokenize without padding to check lengths
-    encoded_no_pad = tokenizer(formatted_prompts, return_tensors="pt", add_special_tokens=True)
-    
-    # Check if any sequence is longer than max_prompt_length
-    max_actual_length = encoded_no_pad["input_ids"].shape[1]
-    if max_actual_length > max_prompt_length:
-        print(f"Warning: Some sequences ({max_actual_length} tokens) are longer than max_prompt_length ({max_prompt_length})")
-        print("Truncating to fit max_prompt_length...")
     
     # Now tokenize with proper padding and truncation
     encoded = tokenizer(
@@ -177,7 +138,7 @@ def create_prompts_dataproto(tokenizer, questions, max_prompt_length=1024):
     return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=meta_info)
 
 
-def setup_actor_rollout_config(model_path, prompt_length=256, response_length=256):
+def setup_actor_rollout_config(model_path, prompt_length=256, response_length=256, template_type="confidence"):
     """
     Create configuration for ActorRolloutRefWorker following FSDP workers pattern.
     
@@ -185,6 +146,7 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
         model_path: Path to the model
         prompt_length: Maximum prompt length
         response_length: Maximum response length
+        template_type: Type of system template to use ("tool", "tool_interleaved", "confidence", "default")
         
     Returns:
         DictConfig object with proper structure for ActorRolloutRefWorker
@@ -239,14 +201,17 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
         
         # Rollout configuration - this is where vLLM settings go
         "rollout": {
-            "name": "vllm_with_mcp",
+            "name": "vllm",
             "mode": "sync",
             
             # Basic rollout settings
             "prompt_length": prompt_length,
             "response_length": 5000,
             "max_model_len": None,
-            "n": 5,  # Number of responses per prompt
+            "n": 1,  # Number of responses per prompt
+            
+            # Template configuration
+            "template_type": template_type,
             
             # vLLM specific settings
             "tensor_model_parallel_size": 1,
@@ -312,6 +277,559 @@ def setup_actor_rollout_config(model_path, prompt_length=256, response_length=25
     })
 
 
+def segment_text_by_sentences(token_texts, token_logprobs, tokenizer):
+    """
+    Segment tokens into sentences/punctuated segments and compute metrics for each segment.
+    
+    Args:
+        token_texts: List of decoded token strings
+        token_logprobs: List of log probabilities for each token
+        tokenizer: HuggingFace tokenizer
+        
+    Returns:
+        List of dictionaries with segment info including text, tokens, metrics
+    """
+    segments = []
+    current_segment = {
+        'tokens': [],
+        'token_texts': [],
+        'logprobs': [],
+        'start_idx': 0
+    }
+    
+    # Sentence ending punctuation
+    sentence_endings = {'.', '\n'}
+    # Additional segment breaks for better granularity
+    segment_breaks = set()  # Remove other punctuation marks
+    
+    for i, (token_text, logprob) in enumerate(zip(token_texts, token_logprobs)):
+        current_segment['tokens'].append(i)
+        current_segment['token_texts'].append(token_text)
+        current_segment['logprobs'].append(logprob.item())
+        
+        # Check if this token ends a sentence/segment
+        stripped_token = token_text.strip()
+        should_break = False
+        
+        # Strong sentence endings
+        if any(ending in stripped_token for ending in sentence_endings):
+            should_break = True
+        # Weaker segment breaks (only if segment is getting long)
+        elif len(current_segment['tokens']) > 10 and any(break_char in stripped_token for break_char in segment_breaks):
+            should_break = True
+        # Force break if segment gets too long
+        elif len(current_segment['tokens']) > 30:
+            should_break = True
+        
+        if should_break and len(current_segment['tokens']) > 1:  # Don't create single-token segments
+            # Compute metrics for this segment
+            segment_logprobs = torch.tensor(current_segment['logprobs'])
+            segment_text = ''.join(current_segment['token_texts']).strip()
+            
+            if len(segment_text) > 0:  # Only add non-empty segments
+                segment_info = {
+                    'text': segment_text,
+                    'tokens': current_segment['tokens'].copy(),
+                    'token_texts': current_segment['token_texts'].copy(),
+                    'logprobs': current_segment['logprobs'].copy(),
+                    'start_idx': current_segment['start_idx'],
+                    'end_idx': i,
+                    'length': len(current_segment['tokens']),
+                    'normalized_logprob': segment_logprobs.mean().item(),
+                    'total_logprob': segment_logprobs.sum().item(),
+                    'min_logprob': segment_logprobs.min().item(),
+                    'max_logprob': segment_logprobs.max().item(),
+                    'std_logprob': segment_logprobs.std().item(),
+                }
+                
+                # Compute entropy (uncertainty)
+                # For entropy, we need to convert log probabilities to probabilities
+                probs = torch.exp(segment_logprobs)
+                # Clip to avoid numerical issues
+                probs = torch.clamp(probs, min=1e-10, max=1.0)
+                entropy = -(probs * torch.log(probs)).sum() / len(probs)
+                segment_info['mean_entropy'] = entropy.item()
+                
+                segments.append(segment_info)
+            
+            # Start new segment
+            current_segment = {
+                'tokens': [],
+                'token_texts': [],
+                'logprobs': [],
+                'start_idx': i + 1
+            }
+    
+    # Add final segment if it has content
+    if len(current_segment['tokens']) > 0:
+        segment_logprobs = torch.tensor(current_segment['logprobs'])
+        segment_text = ''.join(current_segment['token_texts']).strip()
+        
+        if len(segment_text) > 0:
+            segment_info = {
+                'text': segment_text,
+                'tokens': current_segment['tokens'].copy(),
+                'token_texts': current_segment['token_texts'].copy(),
+                'logprobs': current_segment['logprobs'].copy(),
+                'start_idx': current_segment['start_idx'],
+                'end_idx': len(token_texts) - 1,
+                'length': len(current_segment['tokens']),
+                'normalized_logprob': segment_logprobs.mean().item(),
+                'total_logprob': segment_logprobs.sum().item(),
+                'min_logprob': segment_logprobs.min().item(),
+                'max_logprob': segment_logprobs.max().item(),
+                'std_logprob': segment_logprobs.std().item(),
+            }
+            
+            probs = torch.exp(segment_logprobs)
+            probs = torch.clamp(probs, min=1e-10, max=1.0)
+            entropy = -(probs * torch.log(probs)).sum() / len(probs)
+            segment_info['mean_entropy'] = entropy.item()
+            
+            segments.append(segment_info)
+    
+    return segments
+
+
+def compute_segment_colors(segments, metric='normalized_logprob'):
+    """
+    Assign colors to segments based on their metric values using quantiles.
+    
+    Args:
+        segments: List of segment dictionaries
+        metric: Which metric to use ('normalized_logprob' or 'mean_entropy')
+        
+    Returns:
+        List of color assignments for each segment
+    """
+    if not segments:
+        return []
+    
+    # Extract metric values
+    values = [seg[metric] for seg in segments]
+    values_tensor = torch.tensor(values)
+    
+    # Compute quantiles for color assignment
+    if metric == 'normalized_logprob':
+        # For log probabilities: higher = better (green), lower = worse (red)
+        q25 = torch.quantile(values_tensor, 0.25)
+        q75 = torch.quantile(values_tensor, 0.75)
+        
+        colors = []
+        for value in values:
+            if value >= q75:
+                colors.append('high')  # Green - high confidence
+            elif value <= q25:
+                colors.append('low')   # Red - low confidence  
+            else:
+                colors.append('medium')  # Yellow - medium confidence
+                
+    else:  # mean_entropy
+        # For entropy: lower = better (green), higher = worse (red)
+        q25 = torch.quantile(values_tensor, 0.25)
+        q75 = torch.quantile(values_tensor, 0.75)
+        
+        colors = []
+        for value in values:
+            if value <= q25:
+                colors.append('high')  # Green - low entropy (high confidence)
+            elif value >= q75:
+                colors.append('low')   # Red - high entropy (low confidence)
+            else:
+                colors.append('medium')  # Yellow - medium entropy
+    
+    return colors
+
+
+def plot_and_save_logprobs(logprobs, tokenizer, questions, responses, results_dir="results"):
+    """
+    Create and save log probability plots for each rollout with text highlighting.
+    
+    Args:
+        logprobs: torch.Tensor of log probabilities (batch_size, sequence_length)
+        tokenizer: HuggingFace tokenizer for decoding tokens
+        questions: List of input questions
+        responses: torch.Tensor of response token IDs
+        results_dir: Directory to save plots
+    """
+    # Create results directory if it doesn't exist
+    os.makedirs(results_dir, exist_ok=True)
+    
+    batch_size = logprobs.shape[0]
+    
+    for i in range(batch_size):
+        # Get log probabilities for this sample (remove padding)
+        sample_logprobs = logprobs[i]
+        sample_responses = responses[i]
+        
+        # Remove padding tokens (-1 values in logprobs, pad_token_id in responses)
+        non_pad_mask = sample_logprobs != -1
+        valid_logprobs = sample_logprobs[non_pad_mask]
+        valid_responses = sample_responses[non_pad_mask]
+        
+        if len(valid_logprobs) == 0:
+            continue
+        
+        # Create single panel figure for log probabilities only
+        plt.figure(figsize=(14, 6))
+        
+        # Plot log probabilities over token positions
+        plt.plot(range(len(valid_logprobs)), valid_logprobs.cpu().numpy(), 'b-', alpha=0.8, linewidth=1.5)
+        plt.title(f'Log Probabilities - Sample {i+1}', fontsize=16, fontweight='bold')
+        plt.xlabel('Token Position', fontsize=12)
+        plt.ylabel('Log Probability', fontsize=12)
+        plt.grid(True, alpha=0.3)
+        
+        # Add statistics
+        mean_logprob = valid_logprobs.mean().item()
+        min_logprob = valid_logprobs.min().item()
+        max_logprob = valid_logprobs.max().item()
+        std_logprob = valid_logprobs.std().item()
+        
+        # Add threshold lines
+        plt.axhline(y=mean_logprob, color='r', linestyle='--', alpha=0.7, 
+                   label=f'Mean: {mean_logprob:.3f}')
+        
+        # Add threshold line for "low" log probabilities (mean - 1 std)
+        low_threshold = mean_logprob - std_logprob
+        plt.axhline(y=low_threshold, color='orange', linestyle='--', alpha=0.7, 
+                   label=f'Low threshold: {low_threshold:.3f}')
+        plt.legend()
+        
+        # Add text with statistics
+        stats_text = f'Mean: {mean_logprob:.3f}\nStd: {std_logprob:.3f}\nMin: {min_logprob:.3f}\nMax: {max_logprob:.3f}\nTokens: {len(valid_logprobs)}'
+        plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                fontsize=10)
+        
+        # Prepare data for HTML visualization
+        token_texts = []
+        token_colors = []
+        
+        for j, (token_id, logprob) in enumerate(zip(valid_responses, valid_logprobs)):
+            token_text = tokenizer.decode([token_id], skip_special_tokens=True)
+            token_texts.append(token_text)
+            
+            # Color based on log probability relative to threshold
+            if logprob < low_threshold:
+                color = 'red'  # Low confidence
+            elif logprob < mean_logprob:
+                color = 'orange'  # Medium-low confidence
+            else:
+                color = 'green'  # High confidence
+            
+            token_colors.append(color)
+        
+        # Compute sentence-level segments and metrics
+        segments = segment_text_by_sentences(token_texts, valid_logprobs, tokenizer)
+        
+        # Compute colors for both metrics
+        logprob_colors = compute_segment_colors(segments, 'normalized_logprob')
+        entropy_colors = compute_segment_colors(segments, 'mean_entropy')
+        
+        # Add segment color information to each segment
+        for seg, lp_color, ent_color in zip(segments, logprob_colors, entropy_colors):
+            seg['logprob_color'] = lp_color
+            seg['entropy_color'] = ent_color
+        
+        plt.tight_layout()
+        
+        # Save the plot
+        filename = f'logprob_analysis_sample_{i+1}.png'
+        filepath = os.path.join(results_dir, filename)
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close()  # Close to free memory
+        
+        # Create both token-level and sentence-level HTML visualizations
+        html_filename = f'logprob_analysis_sample_{i+1}.html'
+        html_filepath = os.path.join(results_dir, html_filename)
+        _create_enhanced_html_visualization(html_filepath, token_texts, token_colors, valid_logprobs, 
+                                          mean_logprob, low_threshold, segments,
+                                          questions[i] if i < len(questions) else "Sample")
+        
+        print(f"✅ Saved log probability plot: {filepath}")
+        print(f"✅ Saved enhanced HTML visualization: {html_filepath}")
+    
+    print(f"\n📊 All log probability analyses saved to '{results_dir}/' directory")
+
+
+def _create_enhanced_html_visualization(filepath, token_texts, token_colors, logprobs, mean_logprob, low_threshold, segments, question):
+    """Create an enhanced HTML file with both token-level and segment-level highlighting."""
+    
+    # Create HTML header and styles
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Log Probability Analysis</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f8f9fa;
+            line-height: 1.6;
+        }}
+        .header {{
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }}
+        .stats {{
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            border-left: 5px solid #007bff;
+        }}
+        .metrics-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }}
+        .metric-card {{
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }}
+        .tabs {{
+            margin-bottom: 20px;
+        }}
+        .tab-button {{
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }}
+        .tab-button.active {{
+            background-color: white;
+            border-bottom: 1px solid white;
+        }}
+        .tab-content {{
+            background-color: white;
+            padding: 25px;
+            border-radius: 0 8px 8px 8px;
+            border: 1px solid #dee2e6;
+            min-height: 400px;
+        }}
+        .text-container {{
+            font-family: 'Courier New', monospace;
+            line-height: 1.8;
+            font-size: 14px;
+        }}
+        .high-confidence {{
+            background-color: #d4edda;
+            padding: 2px 4px;
+            border-radius: 3px;
+            border: 1px solid #c3e6cb;
+        }}
+        .medium-confidence {{
+            background-color: #fff3cd;
+            padding: 2px 4px;
+            border-radius: 3px;
+            border: 1px solid #ffeaa7;
+        }}
+        .low-confidence {{
+            background-color: #f8d7da;
+            padding: 2px 4px;
+            border-radius: 3px;
+            border: 1px solid #f5c6cb;
+        }}
+        .segment {{
+            display: inline;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin: 1px;
+        }}
+        .segment-high {{
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }}
+        .segment-medium {{
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }}
+        .segment-low {{
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }}
+        .tooltip {{
+            position: relative;
+            cursor: help;
+        }}
+        .tooltip .tooltiptext {{
+            visibility: hidden;
+            width: 200px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+        }}
+        .tooltip:hover .tooltiptext {{
+            visibility: visible;
+            opacity: 1;
+        }}
+        .legend {{
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }}
+        .legend-item {{
+            display: inline-block;
+            margin: 5px 15px 5px 0;
+            padding: 8px 12px;
+            border-radius: 5px;
+        }}
+        .hidden {{
+            display: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Enhanced Log Probability Analysis</h1>
+        <p><strong>Question:</strong> {question}</p>
+    </div>
+    
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <h4>Token Analysis</h4>
+            <p><strong>Total Tokens:</strong> {len(token_texts)}</p>
+            <p><strong>Mean LogProb:</strong> {mean_logprob:.3f}</p>
+        </div>
+        <div class="metric-card">
+            <h4>Segment Analysis</h4>
+            <p><strong>Total Segments:</strong> {len(segments)}</p>
+            <p><strong>Avg Segment Length:</strong> {sum(seg['length'] for seg in segments) / len(segments):.1f} tokens</p>
+        </div>
+        <div class="metric-card">
+            <h4>Confidence Distribution</h4>
+            <p><strong>High:</strong> {sum(1 for c in token_colors if c == 'green')} tokens</p>
+            <p><strong>Medium:</strong> {sum(1 for c in token_colors if c == 'orange')}</p>
+            <p><strong>Low:</strong> {sum(1 for c in token_colors if c == 'red')}</p>
+        </div>
+    </div>
+    
+    <div class="tabs">
+        <button class="tab-button active" onclick="showTab('token-level')">Token-Level Analysis</button>
+        <button class="tab-button" onclick="showTab('segment-logprob')">Segment-Level (LogProb)</button>
+        <button class="tab-button" onclick="showTab('segment-entropy')">Segment-Level (Entropy)</button>
+    </div>
+    
+    <div id="token-level" class="tab-content">
+        <h3>Token-Level Highlighting</h3>
+        <div class="legend">
+            <span class="legend-item high-confidence">High Confidence (> mean)</span>
+            <span class="legend-item medium-confidence">Medium Confidence (< mean)</span>
+            <span class="legend-item low-confidence">Low Confidence (< mean - std)</span>
+        </div>
+        <div class="text-container">
+            <p style="margin-bottom: 15px; font-style: italic;">Hover over tokens to see exact log probability values.</p>
+"""
+    
+    # Add token-level highlighting
+    for token_text, color, logprob in zip(token_texts, token_colors, logprobs):
+        clean_token = token_text.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+        clean_token = clean_token.replace('\n', '<br>').replace('\t', '&nbsp;&nbsp;&nbsp;&nbsp;')
+        
+        css_class = {
+            'green': 'high-confidence',
+            'orange': 'medium-confidence', 
+            'red': 'low-confidence'
+        }.get(color, 'high-confidence')
+        
+        html_content += f'<span class="tooltip {css_class}">{clean_token}<span class="tooltiptext">LogProb: {logprob:.3f}</span></span>'
+    
+    html_content += """
+        </div>
+    </div>
+    
+    <div id="segment-logprob" class="tab-content hidden">
+        <h3>Segment-Level Analysis: Normalized Log Probability</h3>
+        <div class="legend">
+            <span class="legend-item segment-high">High Confidence (Top 25%)</span>
+            <span class="legend-item segment-medium">Medium Confidence (Middle 50%)</span>
+            <span class="legend-item segment-low">Low Confidence (Bottom 25%)</span>
+        </div>
+"""
+    
+    # Add segment-level highlighting for log probabilities
+    for seg in segments:
+        css_class = f"segment-{seg['logprob_color']}"
+        html_content += f"""
+        <span class="tooltip {css_class}">{seg['text']}<span class="tooltiptext">
+            Normalized LogProb: {seg['normalized_logprob']:.3f}<br>
+            Length: {seg['length']} tokens<br>
+            Total LogProb: {seg['total_logprob']:.3f}<br>
+            Std Dev: {seg['std_logprob']:.3f}
+        </span></span>"""
+    
+    html_content += """
+    </div>
+    
+    <div id="segment-entropy" class="tab-content hidden">
+        <h3>Segment-Level Analysis: Mean Token Entropy</h3>
+        <div class="legend">
+            <span class="legend-item segment-high">Low Entropy (High Certainty)</span>
+            <span class="legend-item segment-medium">Medium Entropy</span>
+            <span class="legend-item segment-low">High Entropy (High Uncertainty)</span>
+        </div>
+"""
+    
+    # Add segment-level highlighting for entropy
+    for seg in segments:
+        css_class = f"segment-{seg['entropy_color']}"
+        html_content += f"""
+        <span class="tooltip {css_class}">{seg['text']}<span class="tooltiptext">
+            Mean Entropy: {seg['mean_entropy']:.3f}<br>
+            Length: {seg['length']} tokens<br>
+            Normalized LogProb: {seg['normalized_logprob']:.3f}<br>
+            Std Dev: {seg['std_logprob']:.3f}
+        </span></span>"""
+    
+    html_content += """
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.remove('hidden');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
+"""
+    
+    # Write HTML file
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+
 def main():
     """Main demo function."""
     print("=== ActorRolloutRefWorker vLLM Demo ===\n")
@@ -336,7 +854,9 @@ def main():
     
     # Model setup
     model_path = "Qwen/Qwen2.5-7B-Instruct"
+    template_type = "tool"  # Change this to "tool_interleaved" for interleaved reasoning
     print(f"Loading model: {model_path}")
+    print(f"Using template type: {template_type}")
     
     # Load tokenizer for prompt preparation
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -344,7 +864,7 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
     
     # Create configuration for ActorRolloutRefWorker
-    config = setup_actor_rollout_config(model_path)
+    config = setup_actor_rollout_config(model_path, template_type=template_type)
     print(f"Config: prompt_length={config.rollout.prompt_length}, response_length={config.rollout.response_length}")
     print(f"Rollout config: tensor_parallel_size={config.rollout.tensor_model_parallel_size}, dtype={config.rollout.dtype}")
     
@@ -380,16 +900,21 @@ def main():
     
     # Prepare sample questions
     questions = [
-        # "Who was president of the United States in the year that Citibank was founded?",
-        # "Which cities hosted the Olympics in 1988, and where were the opening ceremonies held in each city?"
-        # "Which actor in the movie Nadja has a Golden Palm Star on the Walk of Stars in Palm Springs, California?"
+        "Who was president of the United States in the year that Citibank was founded?",
+        "Which cities hosted the Olympics in 1988, and where were the opening ceremonies held in each city?",
+        "Which actor in the movie Nadja has a Golden Palm Star on the Walk of Stars in Palm Springs, California?",
         "How many years old was The Real Housewives of New York City franchise when Jenna Lyons premiered on the show?"
         # "Explain the concept of machine learning in simple terms.",
         # "Write a short poem about the ocean.",
     ]
     
     print(f"\nPreparing {len(questions)} prompts...")
-    prompts = create_prompts_dataproto(tokenizer, questions, config.rollout.prompt_length)
+    prompts = create_prompts_dataproto(
+        tokenizer, 
+        questions, 
+        config.rollout.prompt_length,
+        template_type=config.rollout.template_type
+    )
     
     print(f"Prompt batch shape: {prompts.batch['input_ids'].shape}")
     print(f"Expected shape: ({len(questions)}, {config.rollout.prompt_length})")
@@ -410,7 +935,7 @@ def main():
         print(f"Padded length: {len(input_ids)} tokens")
         print(f"First 10 tokens: {input_ids[:10].tolist()}")
         print(f"Last 10 tokens: {input_ids[-10:].tolist()}")
-        print(f"Decoded (first 50 chars): {tokenizer.decode(actual_tokens)[:50]}...")
+        print(f"Decoded (first 50 chars): {tokenizer.decode(actual_tokens)}...")
         print(f"Attention mask sum: {attention_mask.sum().item()}")
         print(f"Position IDs range: {position_ids.min().item()} to {position_ids.max().item()}")
     
@@ -425,12 +950,24 @@ def main():
             torch.cuda.empty_cache()
         
         output = worker.generate_sequences(prompts)
+    
+        logprobs = output.batch['rollout_log_probs']
         print("✅ Generation completed!")
         
         # Show results
         print(f"\nResults:")
         print(f"- Batch size: {len(output)}")
         print(f"- Response tensor shape: {output.batch['responses'].shape}")
+        
+        # Create and save log probability plots
+        print(f"\n📊 Creating log probability plots...")
+        plot_and_save_logprobs(
+            logprobs=logprobs,
+            tokenizer=tokenizer,
+            questions=questions,
+            responses=output.batch['responses'],
+            results_dir="results"
+        )
         
         # Decode and display each result
         for i, question in enumerate(questions):
