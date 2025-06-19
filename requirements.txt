@@ -34,3 +34,4 @@ wikipedia-mcp
 
 flash-attn==2.5.0
 hf_transfer
+math-verify
