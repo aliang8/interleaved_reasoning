@@ -143,9 +143,9 @@ Generate 20 such prompts, each on a new line, numbered 1-20:"""
 # TRIP PLANNING/ITINERARY PROMPTS
 # ============================================================================
 
-TRIP_PLANNING_ITINERARY_PROMPT = """Generate 20 diverse prompts that ask for detailed trip planning or itinerary generation. These should be prompts where each day/step of the itinerary has complex substructures that require interleaved reasoning across multiple factors.
+TRIP_PLANNING_ITINERARY_PROMPT = """Generate 20 diverse prompts that ask for detailed trip planning or itinerary generation. These should be prompts for 2-4 day trips where each day/step of the itinerary has complex substructures that require interleaved reasoning across multiple factors.
 
-IMPORTANT: Create prompts that would realistically require research, fact-checking, or external data sources to answer accurately. Each itinerary item should require MULTI-STEP REASONING that involves:
+IMPORTANT: All prompts must specify trips of 2-4 days only (no longer trips). Create prompts that would realistically require research, fact-checking, or external data sources to answer accurately. Each itinerary item should require MULTI-STEP REASONING that involves:
 - Cross-referencing transportation schedules, costs, and availability
 - Coordinating accommodation bookings with activity schedules
 - Balancing budget constraints across multiple expense categories
@@ -162,12 +162,13 @@ Each step should have subparts like:
 - Alternative plans for weather or availability issues
 - Local cultural events or seasonal considerations
 
-Examples of good trip planning/itinerary prompts:
-- "Create a 7-day itinerary for a family of four visiting Japan during cherry blossom season, with a $5000 budget. Each day should include detailed logistics for transportation between cities, accommodation bookings that align with travel schedules, and activities that account for seasonal crowds and weather patterns."
-- "Plan a 10-day solo backpacking trip through Southeast Asia, optimizing for both cost-effectiveness and cultural immersion. Each location should include visa requirements, budget hostels with good reviews, local transportation options, and activities that provide authentic cultural experiences while considering safety for solo travelers."
-- "Design a 5-day business trip to three European cities with tight meeting schedules. Each day should coordinate flight connections, hotel locations near meeting venues, backup transportation options, and brief cultural activities that fit around business obligations and jet lag recovery."
+Examples of good trip planning/itinerary prompts (2-4 days only):
+- "Create a 2-day itinerary for a family of four visiting Japan during cherry blossom season, with a $3000 budget. Each day should include detailed logistics for transportation between cities, accommodation bookings that align with travel schedules, and activities that account for seasonal crowds and weather patterns."
+- "Plan a 3-day solo backpacking trip through Southeast Asia, optimizing for both cost-effectiveness and cultural immersion. Each location should include visa requirements, budget hostels with good reviews, local transportation options, and activities that provide authentic cultural experiences while considering safety for solo travelers."
+- "Design a 4-day business trip to three European cities with tight meeting schedules. Each day should coordinate flight connections, hotel locations near meeting venues, backup transportation options, and brief cultural activities that fit around business obligations and jet lag recovery."
+- "Create a 2-day weekend getaway to a national park, focusing on hiking and photography. Include equipment needs, trail difficulty assessments, weather considerations, and backup indoor activities."
 
-Generate 20 such prompts, each on a new line, numbered 1-20:"""
+Generate 20 such prompts (all 2-4 days), each on a new line, numbered 1-20:"""
 
 
 # ============================================================================
