@@ -70,3 +70,31 @@ lm_eval --model hf \
     --log_samples \
     --wandb_args project=lm-eval-harness-integration,entity=clvr \
     --output_path results_frames_benchmark
+
+gcloud compute firewall-rules create allow-http-from-vm-8000 \
+    --direction=INGRESS \
+    --priority=1000 \
+    --network=default \
+    --action=ALLOW \
+    --rules=tcp:8000 \
+    --source-ranges=10.150.0.2/32 \
+    --target-tags=http-server-tag \
+    --project=anthony-intern-2025 \
+    --description="Allow HTTP traffic from verl-h100-2 (10.150.0.2) to instances with http-server-tag"
+
+instance-20250616-144352                           10.128.0.2
+workstations-153b2cc9-4513-415e-9284-189e3e6f9857  10.128.15.204
+verl-h100                                          10.128.0.30
+verl-2                                             10.128.0.22
+verl                                               10.128.0.12
+verl-h100-2                                        10.150.0.2
+verl-h100-3                                        10.150.0.3
+
+
+gcloud compute instances add-tags verl-h100 \
+    --zone=us-central1-b \
+    --tags=http-server-tag \
+    --project=anthony-intern-2025
+
+
+gcloud compute firewall-rules describe allow-http-from-vm-8000 --project=anthony-intern-2025

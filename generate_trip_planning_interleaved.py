@@ -470,14 +470,25 @@ def convert_to_parquet_format(results: List[Dict[str, Any]]) -> List[Dict[str, A
     parquet_data = []
     
     for result in results:
-        # Create a training example for each conversation
+        # Create interleaved string from the parts
+        interleaved_answer = ""
+        for part in result["interleaved_parts"]:
+            if part["type"] == "thinking":
+                interleaved_answer += f"<think>\n{part['content']}\n</think>\n\n"
+            elif part["type"] == "answer":
+                interleaved_answer += f"<answer>\n{part['content']}\n</answer>\n\n"
+        
+        # Remove trailing newlines
+        interleaved_answer = interleaved_answer.strip()
+        
+        # Create a training example with question/answer structure
         data = {
             "data_source": "trip_planning_interleaved",
-            "prompt": result["conversation"],  # Full conversation as prompt
+            "question": result["original_prompt"],  # Original trip planning prompt
+            "answer": interleaved_answer,  # Single interleaved string with <think>/<answer> tags
             "ability": "trip_planning",
             "reward_model": {"style": "conversational", "interleaved": True},
             "extra_info": {
-                "original_prompt": result["original_prompt"],
                 "estimated_days": result["estimated_days"],
                 "total_assistant_turns": result["total_assistant_turns"],
                 "total_interleaved_parts": len(result["interleaved_parts"]),
@@ -721,9 +732,11 @@ def main():
         print(f"\nExample Parquet record structure:")
         if results:
             parquet_example = convert_to_parquet_format(results[:1])[0]
+            answer_preview = parquet_example["answer"][:200] + "..." if len(parquet_example["answer"]) > 200 else parquet_example["answer"]
             parquet_preview = {
                 "data_source": parquet_example["data_source"],
-                "prompt": "[Full conversation array...]",
+                "question": parquet_example["question"][:100] + "...",
+                "answer": answer_preview,
                 "ability": parquet_example["ability"], 
                 "reward_model": parquet_example["reward_model"],
                 "extra_info": parquet_example["extra_info"]
@@ -753,6 +766,26 @@ Each assistant response contains both parts but generated separately:
 This creates true interleaved reasoning where thinking and answers are generated
 in alternating turns, with stop tokens ensuring clean separation between reasoning
 and output. Each thinking turn informs the subsequent answer turn.
+
+Example answer format in parquet:
+<think>
+I need to consider the overall trip structure for this 3-day request...
+</think>
+
+<answer>
+Here's a high-level overview for your 3-day trip...
+</answer>
+
+<think>
+For Day 1, I should focus on arrival logistics and initial activities...
+</think>
+
+<answer>
+Day 1: Arrival and City Exploration
+- Morning: Arrive at airport, take metro to hotel...
+</answer>
+
+... and so on for each day
 """)
     
     print(f"{'='*50}")
@@ -767,7 +800,8 @@ and output. Each thinking turn informs the subsequent answer turn.
         print(f"\n2. {output_file_parquet}")
         print(f"   - Training-ready format compatible with VERL")
         print(f"   - {len(results)} examples")
-        print(f"   - Conversations stored in 'prompt' field as message arrays")
+        print(f"   - Original prompt in 'question' field")
+        print(f"   - Single interleaved string in 'answer' field with <think>/<answer> tags")
         
         prompts_file = os.path.join(args.output_dir, "generated_trip_planning_prompts.txt")
         if os.path.exists(prompts_file):
