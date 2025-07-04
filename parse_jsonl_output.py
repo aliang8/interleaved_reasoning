@@ -9,7 +9,7 @@ Usage: python parse_jsonl_output.py <jsonl_file> [--max_entries N] [--show_metad
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import sys
 
 
@@ -42,10 +42,7 @@ def extract_prompt(entry: Dict[str, Any]) -> Optional[str]:
     # Try different common field names for prompts
     if "prompt" in entry:
         return entry["prompt"]
-    
-    if "input" in entry:
-        return entry["input"]
-    
+
     if "question" in entry:
         return entry["question"]
     
@@ -74,7 +71,6 @@ def extract_prompt(entry: Dict[str, Any]) -> Optional[str]:
 def extract_response(entry: Dict[str, Any]) -> Optional[str]:
     """Extract response from various possible formats in the JSONL entry."""
     
-    # Try different common field names for responses
     response_fields = ["generated_response", "answer", "response"]
     
     for field in response_fields:
@@ -112,19 +108,27 @@ def extract_response(entry: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def extract_metadata(entry: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract interesting metadata from the entry."""
+def extract_metadata(entry: Dict[str, Any], fields: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Extract selected metadata fields from the entry.
+
+    If ``fields`` is provided, only those keys are returned (if present).
+    Otherwise, a default curated set is returned.
+    """
+
     metadata = {}
     
-    # Common metadata fields
-    metadata_fields = [
+    # Default metadata fields to look for when `fields` is None
+    default_fields = [
         "model", "temperature", "max_tokens", "timestamp", 
         "step", "num_trajectories", "system_template_type",
         "generation_time", "tokens_generated", "category",
-        "generation_method", "raw_response", "rubric_response"
+        "generation_method", "raw_response", "rubric_response",
+        "output", "ground_truth", "autorater_scores", "format_scores"
     ]
-    
-    for field in metadata_fields:
+
+    search_fields = fields if fields is not None else default_fields
+
+    for field in search_fields:
         if field in entry:
             metadata[field] = entry[field]
     
@@ -132,14 +136,14 @@ def extract_metadata(entry: Dict[str, Any]) -> Dict[str, Any]:
     if "config" in entry:
         config = entry["config"]
         if isinstance(config, dict):
-            for field in metadata_fields:
+            for field in search_fields:
                 if field in config:
                     metadata[field] = config[field]
     
     if "params" in entry:
         params = entry["params"]
         if isinstance(params, dict):
-            for field in metadata_fields:
+            for field in search_fields:
                 if field in params:
                     metadata[field] = params[field]
     
@@ -175,7 +179,7 @@ def format_text(text: str, max_width: int = 100) -> str:
     return '\n'.join(formatted_lines)
 
 
-def display_entry(entry: Dict[str, Any], index: int, show_metadata: bool = False):
+def display_entry(entry: Dict[str, Any], index: int, show_metadata: Union[bool, List[str]] = False):
     """Display a single JSONL entry with formatting."""
     
     print_separator("=", 80, Colors.BLUE)
@@ -185,7 +189,7 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: bool = False
     # Extract and display prompt
     prompt = extract_prompt(entry)
     if prompt:
-        print_colored("PROMPT:", Colors.BOLD + Colors.GREEN)
+        print_colored("QUESTION:", Colors.BOLD + Colors.GREEN)
         print(format_text(prompt))
         print()
     else:
@@ -195,7 +199,7 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: bool = False
     # Extract and display response
     response = extract_response(entry)
     if response:
-        print_colored("RESPONSE:", Colors.BOLD + Colors.GREEN)
+        print_colored("ANSWER:", Colors.BOLD + Colors.GREEN)
         print(format_text(response))
         print()
     else:
@@ -204,7 +208,9 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: bool = False
     
     # Display metadata if requested
     if show_metadata:
-        metadata = extract_metadata(entry)
+        # Determine specific fields to extract
+        fields_filter = show_metadata if isinstance(show_metadata, list) else None
+        metadata = extract_metadata(entry, fields_filter)
         if metadata:
             print_colored("METADATA:", Colors.BOLD + Colors.YELLOW)
             for key, value in metadata.items():
@@ -217,7 +223,7 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: bool = False
     print()
 
 
-def parse_jsonl_file(file_path: str, max_entries: Optional[int] = None, show_metadata: bool = False):
+def parse_jsonl_file(file_path: str, max_entries: Optional[int] = None, show_metadata: Union[bool, List[str]] = False):
     """Parse and display contents of a JSONL file."""
     
     if not Path(file_path).exists():
@@ -289,8 +295,8 @@ Examples:
     parser.add_argument("jsonl_file", help="Path to the JSONL file to parse")
     parser.add_argument("--max_entries", "-n", type=int, default=None,
                        help="Maximum number of entries to display (default: all)")
-    parser.add_argument("--show_metadata", "-m", action="store_true",
-                       help="Show metadata/configuration information for each entry")
+    parser.add_argument("--show_metadata", "-m", nargs="*", default=None,
+                       help="Show metadata fields. Use without arguments to show all metadata or specify field names to filter.")
     parser.add_argument("--no_color", action="store_true",
                        help="Disable colored output")
     
@@ -302,7 +308,15 @@ Examples:
             if not attr.startswith('_'):
                 setattr(Colors, attr, '')
     
-    parse_jsonl_file(args.jsonl_file, args.max_entries, args.show_metadata)
+    # Determine show_metadata parameter based on provided arguments
+    if args.show_metadata is None:
+        show_metadata_param = False
+    elif len(args.show_metadata) == 0:
+        show_metadata_param = True  # Show all metadata fields
+    else:
+        show_metadata_param = args.show_metadata  # List of specific fields
+
+    parse_jsonl_file(args.jsonl_file, args.max_entries, show_metadata_param)
 
 
 if __name__ == "__main__":
