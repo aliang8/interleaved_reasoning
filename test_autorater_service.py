@@ -63,21 +63,26 @@ def test_initialization(base_url: str, config_data: Dict[str, Any]) -> bool:
 def create_sample_evaluation_data() -> Dict[str, Any]:
     """Create sample data for evaluation testing using real tokenizer"""
 
-    from transformers import AutoTokenizer
+    from transformers import AutoTokenizer  # type: ignore
     
     # Load the same tokenizer used by the AutoRater service
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=False)
     
-    # Sample prompts asking to implement simple Python functions
+    # Sample prompts asking to implement simple Python functions + DataFrame transform
     sample_prompts = [
         "Write a Python function add(a, b) that returns their sum.",
-        "Write a Python function multiply(a, b) that returns their product."
+        "Write a Python function multiply(a, b) that returns their product.",
+        "Write a Python function divide(a, b) that returns a / b.",
+        "Write a Python function task_func(df: pandas.DataFrame, n: int) that returns the first n columns and n."
     ]
 
-    # Predicted answers: first is correct implementation, second intentionally wrong
+    # Predicted answers
     sample_responses = [
         """```python\ndef add(a, b):\n    return a + b\n```""",
-        """```python\ndef multiply(a, b):\n    # bug: returns sum instead of product\n    return a + b\n```"""
+        """```python\ndef multiply(a, b):\n    # bug: returns sum instead of product\n    return a + b\n```""",
+        "I couldn't write the function.",
+        """```python\nimport pandas as pd\n
+def task_func(df: pd.DataFrame, n: int):\n    return df.iloc[:, :n], n\n```"""
     ]
     
     # Tokenize prompts and responses
@@ -113,6 +118,13 @@ def create_sample_evaluation_data() -> Dict[str, Any]:
         [
             "assert multiply(2, 3) == 6",
             "assert multiply(-1, 4) == -4"
+        ],
+        [
+            "assert divide(6, 2) == 3",
+            "assert divide(5, 2) == 2.5"
+        ],
+        [
+            """import unittest\nimport pandas as pd\nimport numpy as np\nclass TestCases(unittest.TestCase):\n    def setUp(self):\n        self.data = pd.DataFrame({'Column1': np.random.rand(10), 'Column2': np.random.rand(10)})\n\n    def test_transformed_data_shape(self):\n        transformed_data, n = task_func(self.data, 2)\n        self.assertEqual(transformed_data.shape, (10, 2))\n"""
         ]
     ]
 
@@ -134,8 +146,10 @@ def create_sample_evaluation_data() -> Dict[str, Any]:
     print(f"   Created real tokenized data:")
     print(f"   - Prompt 1 tokens: {len(tokenized_prompts[0])} tokens")
     print(f"   - Response 1 tokens: {len(tokenized_responses[0])} tokens")
-    print(f"   - Prompt 2 tokens: {len(tokenized_prompts[1])} tokens") 
+    print(f"   - Prompt 2 tokens: {len(tokenized_prompts[1])} tokens")
     print(f"   - Response 2 tokens: {len(tokenized_responses[1])} tokens")
+    print(f"   - Prompt 3 tokens: {len(tokenized_prompts[2])} tokens")
+    print(f"   - Response 3 tokens: {len(tokenized_responses[2])} tokens")
     
     return sample_data
   
@@ -164,7 +178,10 @@ def test_evaluation(base_url: str) -> bool:
         if result.get('code_scores'):
             print(f"   Code scores: {result['code_scores']}")
             print(f"   Tests passed: {result.get('code_tests_passed')} / {result.get('code_total_tests')}")
-        
+            print(f"   Code stdout: {result.get('code_stdout')}")
+            print(f"   Code stderr: {result.get('code_stderr')}")
+            print(f"   Code error: {result.get('code_error')}")
+
         if result.get('autorater_explanations'):
             print(f"   Explanations available: {len(result['autorater_explanations'])} items")
         
@@ -188,12 +205,78 @@ def test_shutdown(base_url: str) -> bool:
         print(f"❌ Shutdown failed: {e}")
         return False
 
+def test_autorater_only(base_url: str) -> bool:
+    """Test the /evaluate_autorater endpoint (LLM scoring only)."""
+
+    print("\n🔬 Testing /evaluate_autorater endpoint…")
+
+    eval_data = create_sample_evaluation_data()
+
+    start_time = time.time()
+    response = requests.post(f"{base_url}/evaluate_autorater", json=eval_data, timeout=60)
+    request_time = time.time() - start_time
+
+    if response.status_code == 200:
+        result = response.json()
+        print("✅ Autorater-only evaluation successful!")
+        print(f"   Request time: {request_time:.2f}s")
+        print(f"   Processing time: {result['processing_time']:.2f}s")
+        print(f"   Success: {result['success']}")
+        print(f"   Autorater scores: {result['autorater_scores']}")
+        print(f"   Decisions: {result['autorater_decisions']}")
+        if result.get('autorater_explanations'):
+            print(f"   Explanations available: {len(result['autorater_explanations'])} items")
+        return result['success']
+    else:
+        print(f"❌ Autorater-only evaluation failed: HTTP {response.status_code}")
+        print(f"   Error: {response.text}")
+        return False
+
+def test_unit_tests_only(base_url: str) -> bool:
+    """Note: Unit test execution is now handled by CodeEvaluator class locally."""
+
+    print("\n🔬 Testing unit test execution (via separate test_code_evaluator.py)...")
+    print("   Note: Unit test execution has been moved to CodeEvaluator class")
+    print("   Run 'python test_code_evaluator.py --test unittest' to test unit test execution")
+    print("   Skipping this test since AutoRater service no longer handles code execution")
+    return True  # Skip this test since code evaluation moved to CodeEvaluator
+
+def test_with_external_libs(base_url: str) -> bool:
+    """Note: Code execution with external libraries is now handled by CodeEvaluator class locally."""
+    
+    print("\n🔬 Testing code execution with external libraries (via separate test_code_evaluator.py)...")
+    print("   Note: Code execution with external libraries has been moved to CodeEvaluator class")
+    print("   Run 'python test_code_evaluator.py --test libs' to test external library execution")
+    print("   Skipping this test since AutoRater service no longer handles code execution")
+    return True  # Skip this test since code evaluation moved to CodeEvaluator
+
+def test_split_unit_tests_endpoint(base_url: str) -> bool:
+    """Note: Split unit test execution is now handled by CodeEvaluator class locally."""
+
+    print("\n🔬 Testing split unit test execution (via separate test_code_evaluator.py)...")
+    print("   Note: Split unit test execution has been moved to CodeEvaluator class")
+    print("   Run 'python test_code_evaluator.py --test unittest' to test unit test execution with multiple test methods")
+    print("   Skipping this test since AutoRater service no longer handles code execution")
+    return True  # Skip this test since code evaluation moved to CodeEvaluator
+
 def main():
     parser = argparse.ArgumentParser(description="Test AutoRater FastAPI Service")
     parser.add_argument("--host", type=str, required=True, help="AutoRater service host IP")
     parser.add_argument("--port", type=int, default=80, help="AutoRater service port")
     parser.add_argument("--skip-init", action="store_true", help="Skip initialization test (if auto-initialized)")
-    parser.add_argument("--skip-eval", action="store_true", help="Skip evaluation test")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["full", "autorater", "tests", "split", "libs", "all"],
+        default="full",
+        help="Which evaluation endpoint(s) to test: \n"
+             "  full      -> /evaluate (LLM AutoRater, legacy endpoint) \n"
+             "  autorater -> /evaluate_autorater (LLM only, recommended) \n"
+             "  tests     -> [DEPRECATED] Use test_code_evaluator.py instead \n"
+             "  split     -> [DEPRECATED] Use test_code_evaluator.py instead \n"
+             "  libs      -> [DEPRECATED] Use test_code_evaluator.py instead \n"
+             "  all       -> run full + autorater (code tests moved to separate file)",
+    )
     parser.add_argument("--shutdown", action="store_true", help="Send shutdown command at the end")
     
     args = parser.parse_args()
@@ -226,12 +309,28 @@ def main():
     else:
         print("\n2. Skipping initialization (already initialized or --skip-init specified)")
     
-    # Test evaluation
-    if not args.skip_eval:
-        print("\n3. Testing evaluation...")
+    # Evaluation endpoint tests based on mode
+    print("\n3. Testing evaluation endpoints…")
+    if args.mode == "full":
         test_evaluation(base_url)
+    elif args.mode == "autorater":
+        test_autorater_only(base_url)
+    elif args.mode == "tests":
+        test_unit_tests_only(base_url)
+    elif args.mode == "split":
+        test_split_unit_tests_endpoint(base_url)
+    elif args.mode == "libs":
+        test_with_external_libs(base_url)
+    elif args.mode == "all":
+        ok_full = test_evaluation(base_url)
+        ok_auto = test_autorater_only(base_url)
+        ok_tests = test_unit_tests_only(base_url)  # Now just shows deprecation message
+        ok_split = test_split_unit_tests_endpoint(base_url)  # Now just shows deprecation message
+        ok_libs = test_with_external_libs(base_url)  # Now just shows deprecation message
+        print("\nSummary: full=%s, autorater=%s" % (ok_full, ok_auto))
+        print("Note: For code evaluation tests, run 'python test_code_evaluator.py --test all'")
     else:
-        print("\n3. Skipping evaluation test")
+        print(f"Unknown mode {args.mode}")
     
     # Test shutdown if requested
     if args.shutdown:
