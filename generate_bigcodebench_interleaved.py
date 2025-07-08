@@ -21,7 +21,7 @@ import argparse
 import torch
 import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
 from tqdm import tqdm
 import time
@@ -153,7 +153,7 @@ class BigCodeBenchGenerator:
         
         return content
 
-    def load_bigcodebench_data(self, subset: str = "hard", limit: int = None) -> List[Dict[str, Any]]:
+    def load_bigcodebench_data(self, subset: str = "hard", limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Load BigCodeBench data from Hugging Face."""
         print(f"Loading BigCodeBench-{subset} dataset...")
         
@@ -203,7 +203,7 @@ class BigCodeBenchGenerator:
     def generate_interleaved_coding_trace(self, problem: Dict[str, Any],
                                          max_new_tokens_per_turn: int = 512,
                                          temperature: float = 0.2,
-                                         top_p: float = 0.7) -> Dict[str, str]:
+                                         top_p: float = 0.7) -> Dict[str, Any]:
         """Generate a complete interleaved coding trace following the 7-step pattern."""
         
         task_id = problem.get("task_id", "Unknown")
@@ -249,7 +249,14 @@ class BigCodeBenchGenerator:
             
             # Step 2: Provide solution description
             print(f"      💡 Step 2: Describing the solution approach")
-            description_prompt = "Now provide a clear description of your solution approach in <answer></answer> tags."
+            description_prompt = """Now provide a clear description of your solution approach in <answer></answer> tags. Format your response as a numbered outline with bolded steps. Each step should be numbered and the main action/topic should be in bold, followed by a colon and explanation. For example:
+
+1. **Remove URLs from the text**: Use regular expressions to identify and remove all URLs...
+2. **Check for remaining words**: After removing URLs, verify if any words are left...
+3. **Generate the word cloud**: Using the WordCloud class...
+4. **Return the result**: Return the final word cloud object...
+
+Provide a comprehensive step-by-step breakdown of your solution approach."""
             messages.append({"role": "user", "content": description_prompt})
             
             description_response = self.generate_single_turn(
@@ -324,9 +331,9 @@ class BigCodeBenchGenerator:
             
             # Step 5: Think about test cases
             print(f"      🧪 Step 5: Planning test cases")
-            test_think_prompt = "Now let me think about comprehensive test cases to validate my solution. What edge cases, normal cases, and boundary conditions should I test? Begin with <think> and end with </think>."
+            test_think_prompt = "Now let me think about comprehensive test cases to validate my solution. What edge cases, normal cases, and boundary conditions should I test? I need to create unittest test cases that import from task_func. Begin with <think> and end with </think>."
             messages.append({"role": "user", "content": test_think_prompt})
-            
+
             test_thinking_response = self.generate_single_turn(
                 messages,
                 max_new_tokens=max_new_tokens_per_turn,
@@ -334,7 +341,7 @@ class BigCodeBenchGenerator:
                 top_p=top_p,
                 enable_thinking=True
             )
-            
+
             # Fix incomplete thinking tag
             if '<think>' in test_thinking_response and '</think>' not in test_thinking_response:
                 think_start = test_thinking_response.find('<think>')
@@ -344,14 +351,34 @@ class BigCodeBenchGenerator:
                     test_thinking_response = test_thinking_response[:think_start + 7] + cleaned_content + "</think>"
                 else:
                     test_thinking_response += "</think>"
-            
+
             messages.append({"role": "assistant", "content": test_thinking_response})
-            
+
             # Step 6: Create test cases
             print(f"      ✅ Step 6: Creating test cases")
-            test_prompt = "Now create comprehensive test cases in <answer></answer> tags. Include multiple test scenarios."
+            test_prompt = """Now create comprehensive test cases in <answer></answer> tags. Use this exact format:
+
+```python
+import unittest
+from task_func import task_func
+
+class Test(unittest.TestCase):
+    def test_case_1(self):
+        # Test case 1 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
+    
+    def test_case_2(self):
+        # Test case 2 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
+    
+    # Add more test methods as needed
+```
+
+Include multiple test scenarios covering edge cases, normal cases, and boundary conditions."""
             messages.append({"role": "user", "content": test_prompt})
-            
+
             test_response = self.generate_single_turn(
                 messages,
                 max_new_tokens=max_new_tokens_per_turn,
@@ -371,19 +398,9 @@ class BigCodeBenchGenerator:
                     test_response += "</answer>"
             
             messages.append({"role": "assistant", "content": test_response})
-            
-            # Step 7: Execute tests (no thinking, just action)
-            print(f"      🚀 Step 7: Executing tests")
-            execute_prompt = "Execute the tests to verify the solution works correctly."
-            messages.append({"role": "user", "content": execute_prompt})
-            
-            # For execution, we'll simulate running the tests
-            execution_result = self._simulate_test_execution(code_response, test_response)
-            
-            messages.append({"role": "assistant", "content": execution_result})
-            
+
             # Build complete interleaved response
-            full_interleaved = f"{thinking_response}\n\n{description_response}\n\n{code_thinking_response}\n\n{code_response}\n\n{test_thinking_response}\n\n{test_response}\n\n{execution_result}"
+            full_interleaved = f"{thinking_response}\n\n{description_response}\n\n{code_thinking_response}\n\n{code_response}\n\n{test_thinking_response}\n\n{test_response}"
             
             # Extract individual components
             thinking_parts = []
@@ -405,11 +422,7 @@ class BigCodeBenchGenerator:
                 else:
                     answer_parts.append("")
             
-            # Add execution result (no thinking for step 7)
-            thinking_parts.append("")  # No thinking for execution
-            answer_parts.append(execution_result)
-            
-            print(f"    ✅ Generated complete 7-step interleaved trace")
+            print(f"    ✅ Generated complete 6-step interleaved trace")
             
             return {
                 "task_id": task_id,
@@ -421,7 +434,7 @@ class BigCodeBenchGenerator:
                 "answer_parts": answer_parts,
                 "step_labels": [
                     "analyze_problem", "solution_description", "implementation_planning", 
-                    "code_implementation", "test_planning", "test_creation", "test_execution"
+                    "code_implementation", "test_planning", "test_creation"
                 ]
             }
 
