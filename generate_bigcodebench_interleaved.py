@@ -219,7 +219,7 @@ class BigCodeBenchGenerator:
             # Initialize conversation
             messages = [
                 {"role": "system", "content": INTERLEAVED_CODING_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Solve this coding problem: {prompt}"}
+                {"role": "user", "content": f"{prompt}.\nAlso generate test cases to validate the solution."}
             ]
             
             # Step 1: Think about the prompt/problem
@@ -356,9 +356,8 @@ Provide a comprehensive step-by-step breakdown of your solution approach."""
 
             # Step 6: Create test cases
             print(f"      ✅ Step 6: Creating test cases")
-            test_prompt = """Now create comprehensive test cases in <answer></answer> tags. Use this exact format:
+            test_prompt = """Now create exactly 4 test cases in <answer></answer> tags. Use this exact format:
 
-```python
 import unittest
 from task_func import task_func
 
@@ -367,16 +366,24 @@ class Test(unittest.TestCase):
         # Test case 1 description
         result = task_func(...)
         self.assertEqual(result, expected_value)
+        self.assertEqual(result, expected_value)
     
     def test_case_2(self):
         # Test case 2 description
         result = task_func(...)
         self.assertEqual(result, expected_value)
     
-    # Add more test methods as needed
-```
+    def test_case_3(self):
+        # Test case 3 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
+    
+    def test_case_4(self):
+        # Test case 4 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
 
-Include multiple test scenarios covering edge cases, normal cases, and boundary conditions."""
+"""
             messages.append({"role": "user", "content": test_prompt})
 
             test_response = self.generate_single_turn(

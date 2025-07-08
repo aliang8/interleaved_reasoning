@@ -42,7 +42,7 @@ def extract_prompt(entry: Dict[str, Any]) -> Optional[str]:
     # Try different common field names for prompts
     if "prompt" in entry:
         return entry["prompt"]
-
+    
     if "question" in entry:
         return entry["question"]
     
@@ -125,7 +125,7 @@ def extract_metadata(entry: Dict[str, Any], fields: Optional[List[str]] = None) 
         "generation_method", "raw_response", "rubric_response",
         "output", "ground_truth", "autorater_scores", "format_scores"
     ]
-
+    
     search_fields = fields if fields is not None else default_fields
 
     for field in search_fields:

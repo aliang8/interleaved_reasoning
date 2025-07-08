@@ -36,7 +36,11 @@ def test_code_evaluator_basic(tokenizer):
         
         # Initialize CodeEvaluator with passed tokenizer
         config = OmegaConf.create({})
-        
+
+        original_prompts = [
+            "I need to create a function that adds two numbers. This is a basic arithmetic operation that takes two parameters and returns their sum."
+        ]
+
         code_evaluator = CodeEvaluator(
             config=config,
             tokenizer=tokenizer,
@@ -87,7 +91,7 @@ def divide(a, b):
         # Evaluate code
         start_time = time.time()
         scores, decisions, explanations, raw_responses = code_evaluator.evaluate_code(
-            predicted_answers, reward_model_info, len(predicted_answers)
+            predicted_answers, original_prompts, reward_model_info, len(predicted_answers)
         )
         processing_time = time.time() - start_time
         
@@ -121,6 +125,10 @@ def test_code_evaluator_unittest(tokenizer):
         
         # Initialize CodeEvaluator with passed tokenizer
         config = OmegaConf.create({})
+        
+        original_prompts = [
+            "I need to create a function that adds two numbers. This is a basic arithmetic operation that takes two parameters and returns their sum."
+        ]
         
         code_evaluator = CodeEvaluator(
             config=config,
@@ -169,7 +177,7 @@ if __name__ == '__main__':
         # Evaluate code
         start_time = time.time()
         scores, decisions, explanations, raw_responses = code_evaluator.evaluate_code(
-            predicted_answers, reward_model_info, len(predicted_answers)
+            predicted_answers, original_prompts, reward_model_info, len(predicted_answers)
         )
         processing_time = time.time() - start_time
         
@@ -203,6 +211,10 @@ def test_code_evaluator_with_libraries(tokenizer):
         
         # Initialize CodeEvaluator with passed tokenizer
         config = OmegaConf.create({})
+        
+        original_prompts = [
+            "I need to create a function that calculates the mean of an array. This is a basic arithmetic operation that takes an array and returns its mean."
+        ]
         
         code_evaluator = CodeEvaluator(
             config=config,
@@ -254,7 +266,7 @@ with patch('requests.get') as mock_get:
         # Evaluate code
         start_time = time.time()
         scores, decisions, explanations, raw_responses = code_evaluator.evaluate_code(
-            predicted_answers, reward_model_info, len(predicted_answers)
+            predicted_answers, original_prompts, reward_model_info, len(predicted_answers)
         )
         processing_time = time.time() - start_time
         
@@ -296,6 +308,10 @@ def test_code_evaluator_interleaved(tokenizer):
                 "unit_tests": 1.5
             }
         })
+
+        original_prompts = [
+            "I need to create a function that adds two numbers. This is a basic arithmetic operation that takes two parameters and returns their sum."
+        ]
         
         code_evaluator = CodeEvaluator(
             config=config,
@@ -305,7 +321,11 @@ def test_code_evaluator_interleaved(tokenizer):
         
         # Test data with interleaved reasoning format
         predicted_answers = [
-            """<answer>I need to create a function that adds two numbers. This is a basic arithmetic operation that takes two parameters and returns their sum.</answer>
+            """<answer>
+1. **Create a function that adds two numbers**:
+   - Define a function `add` that takes two parameters `a` and `b` and returns their sum.
+   - This is a basic arithmetic operation that takes two parameters and returns their sum.
+</answer>
 
 <answer>```python
 def add(a, b):
@@ -324,8 +344,15 @@ def test_add():
             {
                 "ground_truth": "code",
                 "unit_tests": [
-                    "assert add(1, 2) == 3",
-                    "assert add(-1, 5) == 4"
+                    """import unittest
+class TestAdd(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(add(1, 2), 3)
+        self.assertEqual(add(-1, 5), 4)
+
+    def test_add_with_zero(self):
+        self.assertEqual(add(0, 0), 0)
+"""
                 ]
             }
         ]
@@ -333,7 +360,7 @@ def test_add():
         # Evaluate code with interleaved reasoning
         start_time = time.time()
         scores, decisions, explanations, raw_responses = code_evaluator.evaluate_code(
-            predicted_answers, reward_model_info, len(predicted_answers)
+            predicted_answers, original_prompts, reward_model_info, len(predicted_answers)
         )
         processing_time = time.time() - start_time
         

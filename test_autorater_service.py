@@ -153,6 +153,60 @@ def task_func(df: pd.DataFrame, n: int):\n    return df.iloc[:, :n], n\n```"""
     
     return sample_data
   
+def create_sample_outline_data() -> Dict[str, Any]:
+    """Create sample data for outline evaluation testing."""
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=False)
+
+    problem_description = "Given a Directed Acyclic Graph (DAG), write a function to count all possible paths from a given source node to a given destination node."
+    
+    # A good, detailed outline and a poor, vague one
+    sample_outlines = [
+        """
+1. **Algorithm Choice**: Use Depth First Search (DFS) starting from the source.
+2. **Memoization**: Use a dictionary to store the number of paths from each node to the destination to avoid re-computation.
+3. **Base Cases**:
+   - If current node is the destination, return 1.
+   - If current node is in the memoization table, return its stored value.
+4. **Recursive Step**: For the current node, iterate its neighbors. Recursively call DFS for each neighbor and sum the results.
+5. **Store Result**: Store the calculated total for the current node in the memoization table before returning.
+        """,
+        "Just loop through the graph and count the paths.",
+        "Breh",
+        "You did a good job.",
+        """
+        1. **Algorithm Choice**: Use Depth First Search (DFS) starting from the source.
+2. **Memoization**: Use a dictionary to store the number of paths from each node to the destination to avoid re-computation.
+3. **Base Cases**:
+   - If current node is the destination, return 1.
+   - If current node is in the memoization table, return its stored value.
+   """
+    ]
+
+    tokenized_prompts = [tokenizer.encode(problem_description, add_special_tokens=True)] * len(sample_outlines)
+    tokenized_responses = [tokenizer.encode(o, add_special_tokens=False) for o in sample_outlines]
+    attention_masks = [[1] * len(r) for r in tokenized_responses]
+    position_ids = [list(range(len(r))) for r in tokenized_responses]
+    
+    # This is the key part: specifying the 'outline' template
+    reward_infos = [{"template": "outline", "ground_truth": ""}] * len(sample_outlines)
+
+    sample_data = {
+        "prompts": tokenized_prompts,
+        "responses": tokenized_responses,
+        "attention_mask": attention_masks,
+        "position_ids": position_ids,
+        "reward_model_info": reward_infos,
+    }
+
+    print("\n   Created sample data for outline evaluation:")
+    print(f"   - Prompt tokens: {len(tokenized_prompts[0])} tokens")
+    print(f"   - Good outline tokens: {len(tokenized_responses[0])} tokens")
+    print(f"   - Bad outline tokens: {len(tokenized_responses[1])} tokens")
+
+    return sample_data
+
 def test_evaluation(base_url: str) -> bool:
     """Test the evaluation endpoint"""
 
@@ -191,6 +245,42 @@ def test_evaluation(base_url: str) -> bool:
         print(f"   Error: {response.text}")
         return False
             
+def test_outline_evaluation(base_url: str) -> bool:
+    """Test the /evaluate_autorater endpoint with a code outline request."""
+    print("\n🔬 Testing Code Outline evaluation...")
+    
+    eval_data = create_sample_outline_data()
+    
+    start_time = time.time()
+    response = requests.post(f"{base_url}/evaluate_autorater", json=eval_data, timeout=60)
+    request_time = time.time() - start_time
+
+    if response.status_code == 200:
+        result = response.json()
+        print("✅ Outline evaluation successful!")
+        print(f"   Request time: {request_time:.2f}s")
+        print(f"   Processing time: {result['processing_time']:.2f}s")
+        print(f"   Success: {result['success']}")
+        print(f"   Scores (good vs. bad outline): {result['autorater_scores']}")
+        print(f"   Decisions (good vs. bad outline): {result['autorater_decisions']}")
+        
+        # We expect the good outline to get a better score/decision
+        if result['autorater_decisions'][0] == 1 and result['autorater_decisions'][1] == 0:
+            print("   ✅ PASSED: Good outline was approved, bad outline was rejected.")
+        else:
+            print("   ❌ FAILED: The model did not correctly differentiate between the good and bad outlines.")
+
+        if result.get('autorater_explanations'):
+            print(f"   Explanations available: {len(result['autorater_explanations'])} items")
+        
+        for explanation in result['autorater_explanations']:
+            print(f"   Explanation: {explanation}")
+        return result['success']
+    else:
+        print(f"❌ Outline evaluation failed: HTTP {response.status_code}")
+        print(f"   Error: {response.text}")
+        return False
+
 def test_shutdown(base_url: str) -> bool:
     """Test graceful shutdown"""
     try:
@@ -232,33 +322,6 @@ def test_autorater_only(base_url: str) -> bool:
         print(f"   Error: {response.text}")
         return False
 
-def test_unit_tests_only(base_url: str) -> bool:
-    """Note: Unit test execution is now handled by CodeEvaluator class locally."""
-
-    print("\n🔬 Testing unit test execution (via separate test_code_evaluator.py)...")
-    print("   Note: Unit test execution has been moved to CodeEvaluator class")
-    print("   Run 'python test_code_evaluator.py --test unittest' to test unit test execution")
-    print("   Skipping this test since AutoRater service no longer handles code execution")
-    return True  # Skip this test since code evaluation moved to CodeEvaluator
-
-def test_with_external_libs(base_url: str) -> bool:
-    """Note: Code execution with external libraries is now handled by CodeEvaluator class locally."""
-    
-    print("\n🔬 Testing code execution with external libraries (via separate test_code_evaluator.py)...")
-    print("   Note: Code execution with external libraries has been moved to CodeEvaluator class")
-    print("   Run 'python test_code_evaluator.py --test libs' to test external library execution")
-    print("   Skipping this test since AutoRater service no longer handles code execution")
-    return True  # Skip this test since code evaluation moved to CodeEvaluator
-
-def test_split_unit_tests_endpoint(base_url: str) -> bool:
-    """Note: Split unit test execution is now handled by CodeEvaluator class locally."""
-
-    print("\n🔬 Testing split unit test execution (via separate test_code_evaluator.py)...")
-    print("   Note: Split unit test execution has been moved to CodeEvaluator class")
-    print("   Run 'python test_code_evaluator.py --test unittest' to test unit test execution with multiple test methods")
-    print("   Skipping this test since AutoRater service no longer handles code execution")
-    return True  # Skip this test since code evaluation moved to CodeEvaluator
-
 def main():
     parser = argparse.ArgumentParser(description="Test AutoRater FastAPI Service")
     parser.add_argument("--host", type=str, required=True, help="AutoRater service host IP")
@@ -267,14 +330,12 @@ def main():
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["full", "autorater", "tests", "split", "libs", "all"],
+        choices=["full", "autorater", "tests", "split", "libs", "all", "outline"],
         default="full",
         help="Which evaluation endpoint(s) to test: \n"
              "  full      -> /evaluate (LLM AutoRater, legacy endpoint) \n"
              "  autorater -> /evaluate_autorater (LLM only, recommended) \n"
-             "  tests     -> [DEPRECATED] Use test_code_evaluator.py instead \n"
-             "  split     -> [DEPRECATED] Use test_code_evaluator.py instead \n"
-             "  libs      -> [DEPRECATED] Use test_code_evaluator.py instead \n"
+             "  outline   -> /evaluate_autorater (code outline evaluation) \n"
              "  all       -> run full + autorater (code tests moved to separate file)",
     )
     parser.add_argument("--shutdown", action="store_true", help="Send shutdown command at the end")
@@ -317,6 +378,8 @@ def main():
         test_autorater_only(base_url)
     elif args.mode == "tests":
         test_unit_tests_only(base_url)
+    elif args.mode == "outline":
+        test_outline_evaluation(base_url)
     elif args.mode == "split":
         test_split_unit_tests_endpoint(base_url)
     elif args.mode == "libs":
@@ -324,10 +387,11 @@ def main():
     elif args.mode == "all":
         ok_full = test_evaluation(base_url)
         ok_auto = test_autorater_only(base_url)
+        ok_outline = test_outline_evaluation(base_url)
         ok_tests = test_unit_tests_only(base_url)  # Now just shows deprecation message
         ok_split = test_split_unit_tests_endpoint(base_url)  # Now just shows deprecation message
         ok_libs = test_with_external_libs(base_url)  # Now just shows deprecation message
-        print("\nSummary: full=%s, autorater=%s" % (ok_full, ok_auto))
+        print("\nSummary: full=%s, autorater=%s, outline=%s" % (ok_full, ok_auto, ok_outline))
         print("Note: For code evaluation tests, run 'python test_code_evaluator.py --test all'")
     else:
         print(f"Unknown mode {args.mode}")
