@@ -3,7 +3,12 @@
 Script to edit a parquet file's prompt field by appending a unit test instruction.
 Usage:
     python edit_parquet.py --input input.parquet --output output.parquet --prompt_key question
+
+python edit_parquet.py --input verl/data/bigcodebench/train.parquet --output verl/data/bigcodebench/train_with_unit_tests.parquet --prompt_key=prompt
+python edit_parquet.py --input verl/data/bigcodebench/val.parquet --output verl/data/bigcodebench/val_with_unit_tests.parquet --prompt_key=prompt
+
 """
+import json
 import argparse
 import pandas as pd
 
@@ -37,8 +42,16 @@ def main():
         raise ValueError(f"Prompt column '{args.prompt_key}' not found in columns: {df.columns}")
 
     print(f"Editing '{args.prompt_key}' column ...")
-    df[args.prompt_key] = df[args.prompt_key].astype(str) + ADDITIONAL_INSTRUCTION
+    # df[args.prompt_key] = df[args.prompt_key].astype(str) + ADDITIONAL_INSTRUCTION
+
+    def apply_instruction(obj):
+        content = obj["content"]
+        content += ADDITIONAL_INSTRUCTION
+        obj["content"] = content
+        return obj
     
+    df[args.prompt_key] = df[args.prompt_key].apply(apply_instruction)
+
     print(f"Saving to {args.output} ...")
     df.to_parquet(args.output)
 
