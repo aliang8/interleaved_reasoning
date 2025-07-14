@@ -45,9 +45,9 @@ def main():
     # df[args.prompt_key] = df[args.prompt_key].astype(str) + ADDITIONAL_INSTRUCTION
 
     def apply_instruction(obj):
-        content = obj["content"]
+        content = obj[0]["content"]
         content += ADDITIONAL_INSTRUCTION
-        obj["content"] = content
+        obj[0]["content"] = content
         return obj
     
     df[args.prompt_key] = df[args.prompt_key].apply(apply_instruction)
