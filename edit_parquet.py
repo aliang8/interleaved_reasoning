@@ -76,7 +76,7 @@ def main():
             content = content.replace(UNIT_TEST_INSTRUCTION, "")
             content += ADDITIONAL_INSTRUCTION
             obj[0]["content"] = content
-            return str(obj)
+            return obj
     
     df[args.prompt_key] = df[args.prompt_key].apply(apply_instruction)
 
