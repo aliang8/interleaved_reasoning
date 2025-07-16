@@ -69,8 +69,8 @@ torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
     ulysses_sequence_parallel_size=4 
 
 torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
-    data.train_files=bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_train.parquet \
-    data.val_files=bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_test.parquet \
+    data.train_files=bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_train_with_unit_tests.parquet \
+    data.val_files=bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_test_with_unit_tests.parquet \
     data.train_batch_size=8 \
     data.prompt_key=question \
     data.response_key=answer \

@@ -7,15 +7,33 @@ Usage:
 python edit_parquet.py --input verl/data/bigcodebench/train.parquet --output verl/data/bigcodebench/train_with_unit_tests.parquet --prompt_key=prompt
 python edit_parquet.py --input verl/data/bigcodebench/val.parquet --output verl/data/bigcodebench/val_with_unit_tests.parquet --prompt_key=prompt
 
+python edit_parquet.py --input bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_train.parquet --output bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_train_with_unit_tests.parquet --prompt_key=question
+python edit_parquet.py --input bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_test.parquet --output bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_test_with_unit_tests.parquet --prompt_key=question
+
 """
 import json
 import argparse
 import pandas as pd
 
 ADDITIONAL_INSTRUCTION = """
-Also generate unit tests to test the code. Format the unit tests as a python function with a docstring.
-Use this exact format:
+First, outline the solution in a markdown format.
+Then, write the code to implement the solution.
+Finally, generate unit tests to test the code. Format the unit tests as a python function with a docstring. Use this exact format:
 ```python
+import unittest
+from task_func import task_func
+
+class Test(unittest.TestCase):
+    def test_case_1(self):
+        # Test case 1 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
+```
+"""
+
+UNIT_TEST_INSTRUCTION = """Also generate unit tests to test the code. Format the unit tests as a python function with a docstring.
+Use this exact format:
+```
 import unittest
 from task_func import task_func
 
@@ -45,10 +63,18 @@ def main():
     # df[args.prompt_key] = df[args.prompt_key].astype(str) + ADDITIONAL_INSTRUCTION
 
     def apply_instruction(obj):
-        content = obj[0]["content"]
+        content = str(obj)
+        content = content.replace(UNIT_TEST_INSTRUCTION, "")
         content += ADDITIONAL_INSTRUCTION
-        obj[0]["content"] = content
+        obj = content
         return str(obj)
+
+    # def apply_instruction(obj):
+    #     content = obj[0]["content"]
+    #     content = content.replace(UNIT_TEST_INSTRUCTION, "")
+    #     content += ADDITIONAL_INSTRUCTION
+    #     obj[0]["content"] = content
+    #     return str(obj)
     
     df[args.prompt_key] = df[args.prompt_key].apply(apply_instruction)
 
