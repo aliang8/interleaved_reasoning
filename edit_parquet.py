@@ -86,6 +86,8 @@ def main():
     print("Done.")
 
     # also save to jsonl
+    if args.instruction_type == "replace":
+        df[args.prompt_key] = df[args.prompt_key].apply(lambda x: x[0]["content"])
     df.to_json(args.output.replace(".parquet", ".jsonl"), orient="records", lines=True)
 
 
