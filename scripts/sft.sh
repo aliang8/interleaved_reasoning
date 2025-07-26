@@ -99,6 +99,21 @@ torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
     ulysses_sequence_parallel_size=4 
 
 
+torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
+    data.train_files="[math500_interleaved_data/math500_interleaved_concat.parquet,bigcodebench_data/mbpp_interleaved_concat_combined.parquet,code_list_interleaved_data/code_list_interleaved_clean.parquet,bigcodebench_data/bigcodebench_hard_interleaved_coding_dataset_combined.parquet]" \
+    data.val_files="[math500_interleaved_data/math500_interleaved_concat.parquet]" \
+    data.train_batch_size=8 \
+    data.prompt_key=prompt \
+    data.response_key=answer \
+    data.micro_batch_size_per_gpu=1 \
+    model.partial_pretrain=Qwen/Qwen3-8B \
+    trainer.project_name=interleaved-sft \
+    trainer.experiment_name=interleaved-sft-Qwen3-8B_all \
+    trainer.total_epochs=200 \
+    trainer.logger=['console','wandb'] \
+    use_remove_padding=True \
+    ulysses_sequence_parallel_size=4 
+
 
 python3 -m verl.trainer.generate_validation_rollouts \
   --checkpoint_dir=checkpoints/interleaved-sft/test/global_step_1000 \

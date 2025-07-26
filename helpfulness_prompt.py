@@ -13,7 +13,7 @@ An intermediate response is NOT HELPFUL if it's a "work-in-progress" artifact, a
 {predicted_answer}
 ## Evaluation Criteria
 Carefully evaluate the AI Intermediate Response based on the criteria below.
-### A response is HELPFUL (Decision: TRUE) if it:
+### A response is HELPFUL (Decisions: TRUE) if it:
 Delivers a Complete Sub-Part: Provides a finished, polished part of the final answer.
 Example: For a request of "10 suggestions," responding with "Here are the first 3 fully-formed suggestions: [1], [2], [3]." is HELPFUL.
 Asks a Necessary Clarifying Question: Poses a question to the user that is essential for refining the final answer.

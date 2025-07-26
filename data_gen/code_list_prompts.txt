@@ -1,0 +1,77 @@
+Demonstrate a few ways to filter a dictionary to keep only items where the value is above a certain threshold.
+
+Provide different methods to create a deep copy of a nested list.
+
+Show me different ways to get the character with the highest ASCII value in a string.
+
+Write a few functions to perform a basic run-length encoding on a string (e.g., 'AAABBC' -> '3A2B1C').
+
+Show different ways to check if all parentheses, brackets, and braces in a string are balanced and correctly nested.
+
+Provide multiple methods to find the second largest number in a list without sorting the entire list first.
+
+Demonstrate different techniques to rotate a list by k elements to the right.
+
+Write a few functions to generate all possible pairs (combinations of 2) from a list of unique elements.
+
+Implement a simple moving average function using both an efficient queue-based approach and a straightforward loop.
+
+Provide alternative implementations for a function that finds all file paths in a directory and its subdirectories that have a specific file extension.
+
+Show different ways to group consecutive identical elements in a list.
+
+Implement a last-in, first-out (LIFO) stack class using both a plain Python list and collections.deque.
+
+Write a few different functions to find the "majority element" in a list (the element that appears more than n/2 times).
+
+Demonstrate different ways to validate a simple email address format using both regular expressions and basic string manipulation methods.
+
+Show me multiple ways to flatten a deeply nested list containing other lists at various levels.
+
+Provide alternative implementations for a function that sorts a dictionary of strings by key, but ignores case during comparison.
+
+Write a couple of functions to find the first non-repeated character in a string.
+
+Demonstrate how to create a simple memoization decorator in Python, showing both a function-based and a class-based implementation.
+
+Show me different ways to generate the Cartesian product of two lists.
+
+Implement a function that performs basic string compression (e.g., 'aabcccccaaa' becomes 'a2b1c5a3'). Provide an iterative solution and one using itertools.
+
+Provide a few ways to read a large CSV file and calculate the sum of a specific column without loading the entire file into memory.
+
+Write different functions to rotate a 2D matrix (list of lists) 90 degrees clockwise.
+
+Demonstrate how to find all paths to a specific key in a nested dictionary.
+
+Show me a few methods to check if one string is a rotation of another.
+
+Implement Breadth-First Search (BFS) and Depth-First Search (DFS) to traverse a graph represented by an adjacency list.
+
+Show me two different ways to solve the "Coin Change" problem: finding the minimum number of coins to make a given amount, using recursion and dynamic programming.
+
+Write a function to find the Longest Common Subsequence of two strings using both a recursive and a dynamic programming approach.
+
+Demonstrate different ways to find and fill missing values (NaN) in a pandas DataFrame, showing how to fill with a constant, the column mean, and using forward-fill.
+
+Implement a thread-safe singleton pattern in Python using both a lock and a metaclass.
+
+Write a simple web scraper that can fetch content from a list of URLs concurrently, once using multithreading and once using asyncio with aiohttp.
+
+Implement Dijkstra's algorithm to find the shortest path between two nodes in a weighted graph, showing implementations with a priority queue and a simple list.
+
+Provide different methods for performing a SQL-style 'join' between two pandas DataFrames, demonstrating pd.merge and df.join.
+
+Design and implement a basic Least Recently Used (LRU) Cache using both collections.OrderedDict and a manual approach with a dictionary and a doubly linked list.
+
+Show me different efficient ways to apply a custom function to every row of a large pandas DataFrame, contrasting .apply() with vectorized numpy operations.
+
+Implement the producer-consumer problem using threading and queue.Queue, and then again using asyncio and asyncio.Queue.
+
+Show me how to perform a "group by" and aggregate operation on a pandas DataFrame using both the .groupby().agg() method and a .pivot_table().
+
+Implement two different sorting algorithms from scratch, such as Merge Sort and Quick Sort.
+
+Implement a simple job scheduler that runs functions at specified intervals, using both time.sleep and threading.Timer.
+
+Show how to serialize and deserialize a binary tree to a string, providing two different strategies.

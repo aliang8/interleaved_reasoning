@@ -61,8 +61,6 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
 
 # base interleaving
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
- data.train_files=verl/data/bigcodebench/train_with_unit_tests.parquet \
- data.val_files=verl/data/bigcodebench/val_with_unit_tests.parquet \
  data.train_batch_size=32 \
  data.val_batch_size=32 \
  data.max_prompt_length=3096 \
@@ -145,10 +143,8 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
 
 # train without interleaving 
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
- data.train_files=verl/data/bigcodebench/train_with_unit_tests.parquet \
- data.val_files=verl/data/bigcodebench/val_with_unit_tests.parquet \
  data.train_batch_size=32 \
- data.val_batch_size=32 \
+ data.val_batch_size=1024 \
  data.max_prompt_length=3096 \
  data.max_response_length=2000 \
  actor_rollout_ref.model.path=Qwen/Qwen3-8B \
@@ -164,12 +160,12 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
  actor_rollout_ref.rollout.disable_log_stats=False \
  actor_rollout_ref.rollout.n=8 \
  actor_rollout_ref.rollout.temperature=0.7 \
- actor_rollout_ref.rollout.template_type=default \
  actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \
  critic.optim.lr=1e-6 \
  critic.ppo_micro_batch_size_per_gpu=4 \
  algorithm.kl_ctrl.kl_coef=0.001 \
- trainer.val_before_train=False \
+ reward_manager.template_type=default \
+ trainer.val_before_train=True \
  trainer.default_hdfs_dir=null \
  trainer.n_gpus_per_node=8 \
  trainer.nnodes=1 \
@@ -183,7 +179,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
  trainer.max_actor_ckpt_to_keep=2 \
  trainer.max_critic_ckpt_to_keep=2 \
  trainer.total_training_steps=1000 \
- trainer.autorater_service_url="http://10.128.0.30:81" 2>&1 | tee verl_demo.log
+ trainer.debug=True 2>&1 | tee verl_demo.log
 
 # train without interleaving 4k
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
@@ -225,6 +221,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
  trainer.max_actor_ckpt_to_keep=2 \
  trainer.max_critic_ckpt_to_keep=2 \
  trainer.total_training_steps=1000 \
+ trainer.debug=True \
  trainer.autorater_service_url="http://10.128.0.30:81" 2>&1 | tee verl_demo.log
 
 
