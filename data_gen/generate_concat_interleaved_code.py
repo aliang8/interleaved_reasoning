@@ -51,8 +51,6 @@ def generate_paired_interleaved_trace(
     canonical_solution_2 = canonical_solution_2.replace('solution(', 'task_func(')
     test_1 = test_list_to_unittest(problem1["test_list"], func_name="task_func")
     test_2 = test_list_to_unittest(problem2["test_list"], func_name="task_func")
-    libs_1 = []
-    libs_2 = []
     task_id1 = problem1.get("task_id", indices[0] if indices else "Unknown1")
     task_id2 = problem2.get("task_id", indices[1] if indices else "Unknown2")
 
@@ -132,8 +130,8 @@ def generate_paired_interleaved_trace(
         "reward_model": {
             "test_1": test_1,
             "test_2": test_2,
-            "libs_1": libs_1,
-            "libs_2": libs_2,
+            "libs_1": "",
+            "libs_2": "",
             "ground_truth": ""
         },
         "data_source": "mbpp_INTERLEAVED_PROMPTS",

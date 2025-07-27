@@ -49,9 +49,28 @@ def merge_parquet_files(parquet_files: List[str]) -> pd.DataFrame:
     
     print(f"\nMerging {len(dataframes)} DataFrames...")
     
-    import ipdb; ipdb.set_trace()
+    # import numpy as np
+    # for i, df in enumerate(dataframes):
+    #     print("="*100)
+    #     print(f"File {i}: {os.path.basename(parquet_files[i])}")
+    #     for col in df.columns:
+    #         print(col, type(df[col][0]))
+    #         if col == "extra_info":
+    #             continue
+    #         if isinstance(df[col][0], dict):
+    #             for k, v in df[col][0].items():
+    #                 print("\t", k, type(v))
+
+    #                 if isinstance(v, list) or isinstance(v, np.ndarray):
+    #                     # print("\t", k, type(v))
+    #                     print("\t", v)
+    for i, df in enumerate(dataframes):
+        print(df["answer"][0])
+    
     # Concatenate all DataFrames
     combined_df = pd.concat(dataframes, ignore_index=True)
+
+    import ipdb; ipdb.set_trace()
     
     print(f"Combined DataFrame shape: {combined_df.shape}")
     print(f"Total rows: {len(combined_df)} (expected: {total_rows})")

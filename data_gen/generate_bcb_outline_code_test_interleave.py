@@ -212,6 +212,7 @@ def generate_coding_dataset(
         result_entry = {
             "data_source": "bcb_outline_code_test_interleave",
             "prompt": trace_data["prompt"],
+            "answer": trace_data["full_response"],
             "reward_model": reward_model.to_dict(),
             "extra_info": {
                 "split": "train",
