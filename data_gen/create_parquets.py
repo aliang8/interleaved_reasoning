@@ -30,7 +30,7 @@ import re
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 from generate_concat_interleaved_code import test_list_to_unittest
-from helpers import StandardizedRewardModel, save_to_parquet, combine_examples
+from helpers import StandardizedRewardModel, save_to_parquet_all, combine_examples
 
 def process_knights_and_knaves(local_dir, subsets):
     data_source = "K-and-K/knights-and-knaves"
@@ -67,7 +67,7 @@ def process_knights_and_knaves(local_dir, subsets):
             
             # Create standardized reward model
             reward_model = StandardizedRewardModel(
-                ground_truth=solution,
+                ground_truth=[solution],
                 style="rule"
             )
             
@@ -105,7 +105,7 @@ def process_simpleqa(local_dir):
             
             # Create standardized reward model
             reward_model = StandardizedRewardModel(
-                ground_truth=answer,
+                ground_truth=[answer],
                 style="rule"
             )
             
@@ -148,7 +148,7 @@ def process_mbpp(local_dir):
             
             # Create standardized reward model with unit tests
             reward_model = StandardizedRewardModel(
-                ground_truth=answer,
+                ground_truth=[answer],
                 style="code",
                 unit_tests=[unit_tests],
                 libs=[]
@@ -170,7 +170,7 @@ def process_mbpp(local_dir):
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
     return test_dataset
 
-def process_mbpp_combined(local_dir, n=2, sep=" ", answer_sep="\n\n", prompt_combine_mode="space", llm_model_name="Qwen/Qwen3-8B", llm_device_map="auto", prompt_prefix=None):
+def process_mbpp_combined(local_dir, n=2, sep=" ", prompt_combine_mode="space", llm_model_name="Qwen/Qwen3-8B", llm_device_map="auto", prompt_prefix=None):
     data_source = f"code_mbpp_combined_{prompt_combine_mode}_{n}"
     print("Loading MBPP from HuggingFace...")
     ds = datasets.load_dataset("mbpp")
@@ -199,7 +199,6 @@ def process_mbpp_combined(local_dir, n=2, sep=" ", answer_sep="\n\n", prompt_com
                 prompt_key="prompt",
                 answer_key="code",
                 sep=sep,
-                answer_sep=answer_sep,
                 prompt_combine_mode=prompt_combine_mode,
                 llm_model_name=llm_model_name,
                 llm_device_map=llm_device_map,
@@ -208,7 +207,7 @@ def process_mbpp_combined(local_dir, n=2, sep=" ", answer_sep="\n\n", prompt_com
             
             # Create standardized reward model with unit tests
             reward_model = StandardizedRewardModel(
-                ground_truth=combined_ex["answer"],
+                ground_truth=combined_ex["answers"],
                 style="code",
                 unit_tests=combined_unit_tests,
                 libs=[]
@@ -230,7 +229,7 @@ def process_mbpp_combined(local_dir, n=2, sep=" ", answer_sep="\n\n", prompt_com
     test_combined = combine_dataset(test_dataset, "test")
     return test_combined
 
-def process_simpleqa_combined(local_dir, n=2, sep=" ", answer_sep=", ", prompt_combine_mode="space", llm_model_name="Qwen/Qwen3-8B", llm_device_map="auto", prompt_prefix=None):
+def process_simpleqa_combined(local_dir, n=2, sep=" ", prompt_combine_mode="space", llm_model_name="Qwen/Qwen3-8B", llm_device_map="auto", prompt_prefix=None):
     """
     Loads simpleqa, combines every n examples into one, and saves to parquet.
     prompt_combine_mode: 'space', 'and', or 'llm'
@@ -251,7 +250,6 @@ def process_simpleqa_combined(local_dir, n=2, sep=" ", answer_sep=", ", prompt_c
                 prompt_key="problem",
                 answer_key="answer",
                 sep=sep,
-                answer_sep=answer_sep,
                 prompt_combine_mode=prompt_combine_mode,
                 llm_model_name=llm_model_name,
                 llm_device_map=llm_device_map,
@@ -260,7 +258,7 @@ def process_simpleqa_combined(local_dir, n=2, sep=" ", answer_sep=", ", prompt_c
             
             # Create standardized reward model
             reward_model = StandardizedRewardModel(
-                ground_truth=combined_ex["answer"],
+                ground_truth=combined_ex["answers"],
                 style="rule"
             )
             
@@ -297,7 +295,7 @@ def process_math500(local_dir):
             
             # Create standardized reward model
             reward_model = StandardizedRewardModel(
-                ground_truth=answer,
+                ground_truth=[answer],
                 style="rule"
             )
             
@@ -335,11 +333,10 @@ def process_math500_combined(local_dir, n=2):
             problems = group["problem"]
             answers = group["answer"]
             combined_prompt = "Solve these math problems: " + ", ".join([f"{j+1}) {p}" for j, p in enumerate(problems)])
-            combined_answer = " || ".join(answers)
             
             # Create standardized reward model
             reward_model = StandardizedRewardModel(
-                ground_truth=combined_answer,
+                ground_truth=answers,
                 style="rule"
             )
             
@@ -451,7 +448,7 @@ def main():
     all_datasets = process_datasets_from_config(config)
     
     # Save combined dataset
-    save_to_parquet(all_datasets, config['local_dir'], config['output_filename'])
+    save_to_parquet_all(all_datasets, config['local_dir'], config['output_filename'])
 
 if __name__ == "__main__":
     main() 

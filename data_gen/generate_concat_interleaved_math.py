@@ -113,7 +113,7 @@ def generate_paired_interleaved_trace(
 
     interleaved_answer = f"{think1}\n{answer1}\n{think2}\n{answer2}"
 
-    combined_prompt = combine_examples(
+    combined_ex = combine_examples(
         [problem1, problem2],
         prompt_key="problem",
         answer_key="answer",
@@ -129,11 +129,12 @@ def generate_paired_interleaved_trace(
         ipdb.set_trace()
 
     return {
-        "prompt": combined_prompt["prompt"],
+        "prompt": combined_ex["prompt"],
         "answer": interleaved_answer.strip(),
         "prompt_1": prompt1,
         "prompt_2": prompt2,
         "indices": indices,
+        "combined_answers": combined_ex["answers"],
         "reward_model": {
             "ground_truth_1": canonical_answer_1,
             "ground_truth_2": canonical_answer_2,
@@ -193,7 +194,7 @@ def generate_concat_dataset(
 
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth=",".join([problem1["answer"], problem2["answer"]]),
+            ground_truth=trace_data["combined_answers"],
             style="rule"
         )
 

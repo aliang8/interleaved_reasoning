@@ -203,7 +203,7 @@ def generate_coding_dataset(
 
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth=problem["canonical_solution"],
+            ground_truth=[problem["canonical_solution"]],
             style="code",
             unit_tests=[problem["test"]],
             libs=[problem["libs"]],

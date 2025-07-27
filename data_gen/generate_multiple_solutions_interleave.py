@@ -348,7 +348,7 @@ def main():
         
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth="",  # No single ground truth for multiple solutions
+            ground_truth=[],  # No single ground truth for multiple solutions
             style="code",
             unit_tests=[unit_test],
             libs=[]

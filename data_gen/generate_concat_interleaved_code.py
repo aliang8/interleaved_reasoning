@@ -111,8 +111,8 @@ def generate_paired_interleaved_trace(
     messages2.append({"role": "assistant", "content": code2})
 
     # Build combined prompt and interleaved answer
-    combined_prompt = combine_examples([problem1, problem2], prompt_key="text", answer_key="code", prompt_combine_mode="numbered_list", prompt_prefix="Solve the following coding problems:")
-    combined_prompt = combined_prompt["prompt"]
+    combined_ex = combine_examples([problem1, problem2], prompt_key="text", answer_key="code", prompt_combine_mode="numbered_list", prompt_prefix="Solve the following coding problems:")
+    combined_prompt = combined_ex["prompt"]
     combined_prompt += "\n\nYou should write self-contained code for each problem starting with:\n```\ndef task_func(args):\n```"
     interleaved_answer = f"{think1}\n{code1}\n{think2}\n{code2}"
 
@@ -127,6 +127,7 @@ def generate_paired_interleaved_trace(
         "prompt_1": prompt1,
         "prompt_2": prompt2,
         "indices": indices,
+        "combined_answers": combined_ex["answers"],
         "reward_model": {
             "test_1": test_1,
             "test_2": test_2,
@@ -197,7 +198,7 @@ def generate_concat_dataset(
 
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth="",  # No single ground truth for paired problems
+            ground_truth=trace_data["combined_answers"],  # List of individual answers
             style="code",
             unit_tests=[trace_data['reward_model']['test_1'], trace_data['reward_model']['test_2']],
             libs=[trace_data['reward_model']['libs_1'], trace_data['reward_model']['libs_2']]

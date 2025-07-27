@@ -11,7 +11,7 @@ class StandardizedRewardModel:
     """Standardized reward model structure for all datasets."""
     
     def __init__(self, ground_truth, style="rule", unit_tests=None, libs=None, **kwargs):
-        self.ground_truth = ground_truth
+        self.ground_truth = ground_truth or []
         self.style = style
         self.unit_tests = unit_tests or []
         self.libs = libs or []
@@ -138,18 +138,20 @@ def merge_prompts_with_llm(prompts, model_name=None, device_map=None):
     return response
 
 
-def combine_examples(examples, prompt_key="question", answer_key="answer", sep=" ", answer_sep=", ", 
+def combine_examples(examples, prompt_key="question", answer_key="answer", sep=" ", 
                     prompt_combine_mode="space", llm_model_name=None, llm_device_map=None,
                     prompt_prefix=None):
     """
-    Combine a list of examples into a single prompt and a single answer.
+    Combine a list of examples into a single prompt. Returns the combined prompt and individual answers.
     - prompt_combine_mode: 'space', 'and', 'llm', or 'numbered_list'
     - prompt_prefix: Optional prefix to add to the beginning of the combined prompt
     """
     if isinstance(examples, dict):
         prompts = examples[prompt_key]
+        answers = examples[answer_key]
     else:
         prompts = [example[prompt_key] for example in examples]
+        answers = [example[answer_key] for example in examples]
 
     # Remove trailing punctuation from all but the last prompt if combining with 'and' or 'space', and lowercase the second and later prompts
     if prompt_combine_mode in ("and", "space") and len(prompts) > 1:
@@ -180,9 +182,4 @@ def combine_examples(examples, prompt_key="question", answer_key="answer", sep="
     if prompt_prefix:
         combined_prompt = f"{prompt_prefix}\n{combined_prompt}"
 
-    if isinstance(examples, dict):
-        answers = examples[answer_key]
-    else:
-        answers = [example[answer_key] for example in examples]
-    combined_answer = answer_sep.join(answers)
-    return {"prompt": combined_prompt, "answer": combined_answer}
+    return {"prompt": combined_prompt, "answers": answers}
