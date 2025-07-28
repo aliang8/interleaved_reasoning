@@ -163,7 +163,7 @@ def generate_concat_dataset(
     """Generate paired interleaved math traces for multiple math500 problems."""
     print(f"Generating concat dataset with {num_samples} samples from math500...")
 
-    problems = load_math500_data(limit=None)
+    problems = load_math500_data(limit=400)
 
     if len(problems) < 2:
         print("Not enough problems to generate pairs.")

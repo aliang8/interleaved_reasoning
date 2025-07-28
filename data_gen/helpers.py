@@ -52,17 +52,19 @@ def save_to_parquet(data, suffix, local_dir, output_filename):
     print(f"Saved {len(data)} samples to {output_path}")
 
 def save_to_parquet_all(all_datasets, local_dir, output_filename):
-    """Save all datasets to individual parquet files and a combined parquet file."""
+    """Save all datasets to individual parquet files, JSONL files, and a combined parquet file."""
     os.makedirs(local_dir, exist_ok=True)
     
-    # Save individual parquet files
-    print(f"\nSaving individual parquet files to {local_dir}:")
+    # Save individual parquet and JSONL files
+    print(f"\nSaving individual parquet and JSONL files to {local_dir}:")
     for dataset_name, (train_data, test_data) in all_datasets.items():
         if train_data is not None:
             save_to_parquet(train_data, "train", local_dir, f"{dataset_name}")
+            save_jsonl(train_data, os.path.join(local_dir, f"{dataset_name}_train.jsonl"))
         
         if test_data is not None:
             save_to_parquet(test_data, "test", local_dir, f"{dataset_name}")
+            save_jsonl(test_data, os.path.join(local_dir, f"{dataset_name}_test.jsonl"))
     
     # Combine all datasets for combined parquet file
     all_data = []
@@ -72,8 +74,9 @@ def save_to_parquet_all(all_datasets, local_dir, output_filename):
         if test_data is not None:
             all_data.extend(test_data)
     
-    # Save to combined parquet file
+    # Save to combined parquet and JSONL files
     save_to_parquet(all_data, "all", local_dir, output_filename)
+    save_jsonl(all_data, os.path.join(local_dir, f"{output_filename}_all.jsonl"))
     
     # Print summary
     print(f"\nDataset Summary:")

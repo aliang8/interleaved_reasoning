@@ -32,6 +32,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from generate_concat_interleaved_code import test_list_to_unittest
 from helpers import StandardizedRewardModel, save_to_parquet_all, combine_examples
 
+ADDITIONAL_INSTRUCTION = """
+First, outline the solution in a markdown format.
+Then, write the code to implement the solution.
+Finally, generate unit tests to test the code. Format the unit tests as a python function with a docstring. Use this exact format:
+```python
+import unittest
+from task_func import task_func
+
+class Test(unittest.TestCase):
+    def test_case_1(self):
+        # Test case 1 description
+        result = task_func(...)
+        self.assertEqual(result, expected_value)
+```
+"""
+
 def process_knights_and_knaves(local_dir, subsets):
     data_source = "K-and-K/knights-and-knaves"
     instruction_following = 'You must infer the identity of each character. At the end of your answer, you must clearly state the identity of each character by following the format:\n\nCONCLUSION:\n(1) ...\n(2) ...\n(3) ...'
@@ -357,6 +373,53 @@ def process_math500_combined(local_dir, n=2):
     train_combined = combine_dataset(training_prompt, "train")
     return train_combined, test_combined
 
+def process_bcb(local_dir):
+    data_source = "bcb"
+    print("Loading BigCodeBench from HuggingFace...")
+    ds = datasets.load_dataset("bigcode/bigcodebench-hard", split="v0.1.4")
+    
+    # Split into train (first 100) and test (rest)
+    train_dataset = ds.select(range(100))
+    test_dataset = ds.select(range(100, len(ds)))
+    
+    print(f"BCB dataset split: {len(train_dataset)} train, {len(test_dataset)} test")
+    
+    def make_map_fn(split):
+        def process_fn(example, idx):
+            prompt = example["instruct_prompt"] + "\n" + ADDITIONAL_INSTRUCTION
+            answer = example["canonical_solution"]
+            unit_tests = example["test"]
+            libs = example["libs"]
+            
+            # Clear the example to only keep what we need
+            example.clear()
+            
+            # Create standardized reward model with unit tests
+            reward_model = StandardizedRewardModel(
+                ground_truth=[answer],
+                style="code",
+                unit_tests=[unit_tests],
+                libs=[libs]
+            )
+            
+            data = {
+                "data_source": data_source,
+                "prompt": prompt,
+                "reward_model": reward_model.to_dict(),
+                "extra_info": {
+                    "split": split,
+                    "index": idx,
+                    "question": [prompt],
+                    "answer": [answer],
+                },
+            }
+            return data
+        return process_fn
+    
+    train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
+    test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+    return train_dataset, test_dataset
+
 def process_datasets_from_config(config):
     """Process all datasets specified in the config."""
     all_datasets = {}
@@ -426,6 +489,9 @@ def process_datasets_from_config(config):
             else:
                 test_dataset = process_math500(config['local_dir'])
                 all_datasets[dataset_name] = (None, test_dataset)
+        elif dataset_name == "bcb":
+            train_dataset, test_dataset = process_bcb(config['local_dir'])
+            all_datasets[dataset_name] = (train_dataset, test_dataset)
         else:
             print(f"Warning: Unknown dataset {dataset_name}, skipping...")
     

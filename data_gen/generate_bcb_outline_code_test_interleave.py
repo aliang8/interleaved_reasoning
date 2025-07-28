@@ -3,7 +3,7 @@
 Generate interleaved reasoning traces for BigCodeBench coding prompts.
 Saves the reasoning traces to parquet files for SFT training.
 
-Usage: python generate_bcb_outline_code_test_interleave.py --output_dir bigcodebench_data --num_samples 50
+Usage: python data_gen/generate_bcb_outline_code_test_interleave.py --output_dir data --num_samples 50
 """
 
 import argparse
@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datasets import load_dataset
 from interleave_generator import InterleavedResponsesGenerator
 from helpers import StandardizedRewardModel, save_to_parquet, save_jsonl
+from create_parquets import ADDITIONAL_INSTRUCTION
 
 # Prompt configurations for each step
 CODING_PROMPTS = {
@@ -211,7 +212,7 @@ def generate_coding_dataset(
 
         result_entry = {
             "data_source": "bcb_outline_code_test_interleave",
-            "prompt": trace_data["prompt"],
+            "prompt": trace_data["prompt"] + "\n" + ADDITIONAL_INSTRUCTION,
             "answer": trace_data["full_response"],
             "reward_model": reward_model.to_dict(),
             "extra_info": {
@@ -285,7 +286,7 @@ def main():
         filename_prefix = f"sft/bcb_outline_code_test_interleave"
         save_to_parquet(coding_data, "", args.output_dir, filename_prefix)
 
-        # Also save as JSONL for debuggin
+        # Also save as JSONL
         jsonl_file = os.path.join(args.output_dir, f"{filename_prefix}.jsonl")
         save_jsonl(coding_data, jsonl_file)
 
