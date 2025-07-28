@@ -301,12 +301,7 @@ def main():
             example = coding_data[0]
             print(f"\n📋 Example trace structure:")
             print(f"  Data Source: {example['data_source']}")
-            print(f"  Task ID: {example['extra_info']['task_id']}")
             print(f"  Question: {example['prompt'][:100]}...")
-            print(f"  Steps: {example['extra_info']['step_labels']}")
-            print(
-                f"  Total reasoning steps: {example['extra_info']['reasoning_steps']}"
-            )
             print(f"  Reward Model Style: {example['reward_model']['style']}")
     else:
         print("❌ No data generated")

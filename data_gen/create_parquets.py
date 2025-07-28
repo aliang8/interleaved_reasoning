@@ -374,7 +374,7 @@ def process_math500_combined(local_dir, n=2):
     return train_combined, test_combined
 
 def process_bcb(local_dir):
-    data_source = "bcb"
+    data_source = "bigcodebench"
     print("Loading BigCodeBench from HuggingFace...")
     ds = datasets.load_dataset("bigcode/bigcodebench-hard", split="v0.1.4")
     
