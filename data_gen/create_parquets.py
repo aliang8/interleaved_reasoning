@@ -28,6 +28,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import re
 import sys
+import random
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from generate_concat_interleaved_code import test_list_to_unittest
@@ -112,7 +113,7 @@ def process_knights_and_knaves(local_dir, subsets):
     return train_dataset, test_dataset
 
 
-def process_simpleqa(local_dir):
+def process_simpleqa(local_dir, num_samples=-1):
     data_source = "SimpleQA"
     print("Loading SimpleQA from HuggingFace...")
     ds = datasets.load_dataset("basicv8vc/SimpleQA")
@@ -145,10 +146,14 @@ def process_simpleqa(local_dir):
         return process_fn
 
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
     return test_dataset
 
 
-def process_mbpp(local_dir):
+def process_mbpp(local_dir, num_samples=-1):
     data_source = "code_mbpp"
     print("Loading MBPP from HuggingFace...")
     ds = datasets.load_dataset("mbpp")
@@ -192,6 +197,10 @@ def process_mbpp(local_dir):
         return process_fn
 
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
     return test_dataset
 
 
@@ -203,6 +212,7 @@ def process_mbpp_combined(
     llm_model_name="Qwen/Qwen3-8B",
     llm_device_map="auto",
     prompt_prefix=None,
+    num_samples=-1,
 ):
     data_source = f"code_mbpp_combined_{prompt_combine_mode}_{n}"
     print("Loading MBPP from HuggingFace...")
@@ -270,6 +280,10 @@ def process_mbpp_combined(
         return combined
 
     test_combined = combine_dataset(test_dataset, "test")
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
     return test_combined
 
 
@@ -281,6 +295,7 @@ def process_simpleqa_combined(
     llm_model_name="Qwen/Qwen3-8B",
     llm_device_map="auto",
     prompt_prefix=None,
+    num_samples=-1,
 ):
     """
     Loads simpleqa, combines every n examples into one, and saves to parquet.
@@ -328,10 +343,14 @@ def process_simpleqa_combined(
         return combined
 
     test_combined = combine_dataset(test_dataset, "test")
+
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
     return test_combined
 
 
-def process_math500(local_dir):
+def process_math500(local_dir, num_samples=-1):
     data_source = "math500"
     print("Loading Math500 from HuggingFace...")
     ds = datasets.load_dataset("HuggingFaceH4/MATH-500")
@@ -364,10 +383,14 @@ def process_math500(local_dir):
         return process_fn
 
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
     return test_dataset
 
 
-def process_math500_combined(local_dir, n=2):
+def process_math500_combined(local_dir, n=2, num_samples=-1):
     data_source = f"math500_combined_{n}"
     print("Loading Math500 from HuggingFace...")
     ds = datasets.load_dataset("HuggingFaceH4/MATH-500")
@@ -411,10 +434,16 @@ def process_math500_combined(local_dir, n=2):
 
     test_combined = combine_dataset(test_prompt, "test")
     train_combined = combine_dataset(training_prompt, "train")
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
+        train_combined = random.sample(train_combined, min(num_samples, len(train_combined)))
+    
     return train_combined, test_combined
 
 
-def process_bcb(local_dir):
+def process_bcb(local_dir, num_samples=-1):
     data_source = "bcb_outline_code_test_interleave"
     print("Loading BigCodeBench from HuggingFace...")
 
@@ -461,10 +490,15 @@ def process_bcb(local_dir):
 
     train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        train_dataset = train_dataset.select(range(num_samples))
+        test_dataset = test_dataset.select(range(num_samples))
     return train_dataset, test_dataset
 
 
-def process_bcb_hard(local_dir):
+def process_bcb_hard(local_dir, num_samples=-1):
     data_source = "bcb_outline_code_test_interleave"
     print("Loading BigCodeBench from HuggingFace...")
 
@@ -511,6 +545,12 @@ def process_bcb_hard(local_dir):
 
     train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+    
+    # Sample examples if num_samples is specified and positive
+    if num_samples > 0:
+        train_dataset = train_dataset.select(random.sample(range(len(train_dataset)), min(num_samples, len(train_dataset))))
+        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
+    
     return train_dataset, test_dataset
 
 
@@ -526,6 +566,7 @@ def process_datasets_from_config(config):
 
         if dataset_name == "knights_and_knaves":
             subsets = dataset_config.get("subsets", ["2ppl"])
+            num_samples = dataset_config.get("num_samples", -1)
             train_dataset, test_dataset = process_knights_and_knaves(
                 config["local_dir"], subsets
             )
@@ -533,6 +574,7 @@ def process_datasets_from_config(config):
 
         elif dataset_name == "simpleqa":
             combine_n = dataset_config.get("combine_n", 1)
+            num_samples = dataset_config.get("num_samples", -1)
             if combine_n > 1:
                 prompt_combine_mode = dataset_config.get("prompt_combine_mode", "space")
                 llm_model_name = dataset_config.get("llm_model_name", "Qwen/Qwen3-8B")
@@ -545,16 +587,18 @@ def process_datasets_from_config(config):
                     llm_model_name=llm_model_name,
                     llm_device_map=llm_device_map,
                     prompt_prefix=prompt_prefix,
+                    num_samples=num_samples,
                 )
                 all_datasets[
                     f"{dataset_name}_combined_{prompt_combine_mode}_{combine_n}"
                 ] = (None, test_dataset)
             else:
-                test_dataset = process_simpleqa(config["local_dir"])
+                test_dataset = process_simpleqa(config["local_dir"], num_samples=num_samples)
                 all_datasets[dataset_name] = (None, test_dataset)
 
         elif dataset_name == "mbpp":
             combine_n = dataset_config.get("combine_n", 1)
+            num_samples = dataset_config.get("num_samples", -1)
             if combine_n > 1:
                 prompt_combine_mode = dataset_config.get("prompt_combine_mode", "space")
                 llm_model_name = dataset_config.get("llm_model_name", "Qwen/Qwen3-8B")
@@ -567,32 +611,36 @@ def process_datasets_from_config(config):
                     llm_model_name=llm_model_name,
                     llm_device_map=llm_device_map,
                     prompt_prefix=prompt_prefix,
+                    num_samples=num_samples,
                 )
                 all_datasets[
                     f"{dataset_name}_combined_{prompt_combine_mode}_{combine_n}"
                 ] = (None, test_dataset)
             else:
-                test_dataset = process_mbpp(config["local_dir"])
+                test_dataset = process_mbpp(config["local_dir"], num_samples=num_samples)
                 all_datasets[dataset_name] = (None, test_dataset)
 
         elif dataset_name == "math500":
             combine_n = dataset_config.get("combine_n", 1)
+            num_samples = dataset_config.get("num_samples", -1)
             if combine_n > 1:
                 train_dataset, test_dataset = process_math500_combined(
-                    config["local_dir"], n=combine_n
+                    config["local_dir"], n=combine_n, num_samples=num_samples
                 )
                 all_datasets[f"{dataset_name}_combined_{combine_n}"] = (
                     train_dataset,
                     test_dataset,
                 )
             else:
-                test_dataset = process_math500(config["local_dir"])
+                test_dataset = process_math500(config["local_dir"], num_samples=num_samples)
                 all_datasets[dataset_name] = (None, test_dataset)
         elif dataset_name == "bcb_hard":
-            train_dataset, test_dataset = process_bcb_hard(config["local_dir"])
+            num_samples = dataset_config.get("num_samples", -1)
+            train_dataset, test_dataset = process_bcb_hard(config["local_dir"], num_samples=num_samples)
             all_datasets[dataset_name] = (train_dataset, test_dataset)
         elif dataset_name == "bcb":
-            train_dataset, test_dataset = process_bcb(config["local_dir"])
+            num_samples = dataset_config.get("num_samples", -1)
+            train_dataset, test_dataset = process_bcb(config["local_dir"], num_samples=num_samples)
             all_datasets[dataset_name] = (train_dataset, test_dataset)
         else:
             print(f"Warning: Unknown dataset {dataset_name}, skipping...")
