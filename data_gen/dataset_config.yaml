@@ -1,0 +1,98 @@
+# Configuration file for processing multiple datasets
+# This file specifies which datasets to process and their parameters
+
+# Output directory for the combined parquet file
+local_dir: "./data/rl_eval"
+
+# Output filename for the combined dataset
+output_filename: "combined_datasets.parquet"
+
+# List of datasets to process
+datasets:
+  # Knights and Knaves dataset
+  - name: "knights_and_knaves"
+    subsets: ["3ppl", "4ppl"]  # Which subsets to include
+    num_samples: -1  # Take all samples
+    
+  # SimpleQA dataset (single examples)
+  - name: "simpleqa"
+    combine_n: 1  # No combining
+    num_samples: -1  # Take all samples
+    
+  # SimpleQA dataset (combined examples)
+  - name: "simpleqa"
+    combine_n: 2  # Combine 2 prompts together
+    prompt_combine_mode: "and"  # How to combine: "space", "and", or "llm"
+    llm_model_name: "Qwen/Qwen3-8B"  # Only needed if prompt_combine_mode is "llm"
+    llm_device_map: "auto"
+    num_samples: 500
+    
+  # MBPP dataset (single examples)
+  - name: "mbpp"
+    combine_n: 1  # No combining
+    num_samples: -1  # Take all samples
+    
+  # MBPP dataset (combined examples)
+  - name: "mbpp"
+    combine_n: 2  # Combine 2 prompts together
+    prompt_combine_mode: "and"  # How to combine: "space", "and", or "llm"
+    llm_model_name: "Qwen/Qwen3-8B"  # Only needed if prompt_combine_mode is "llm"
+    llm_device_map: "auto"
+    num_samples: -1  # Take all samples
+    
+  # Math500 dataset (single examples)
+  - name: "math500"
+    combine_n: 1  # No combining
+    num_samples: -1  # Take all samples
+    
+  # Math500 dataset (combined examples)
+  - name: "math500"
+    combine_n: 2  # Combine 2 prompts together
+    num_samples: -1  # Take all samples
+
+  # BigCodeBench dataset (single examples)
+  - name: "bcb"
+    combine_n: 1  # No combining
+    num_samples: 500  
+
+  # BigCodeBench hard dataset (single examples)
+  - name: "bcb_hard"
+    combine_n: 1  # No combining
+    num_samples: -1  # Take all samples
+
+# Example configurations for different use cases:
+
+# For training with diverse datasets:
+# datasets:
+#   - name: "knights_and_knaves"
+#     subsets: ["2ppl"]
+#   - name: "simpleqa"
+#     combine_n: 1
+#   - name: "mbpp"
+#     combine_n: 1
+#   - name: "math500"
+#     combine_n: 1
+
+# For training with combined prompts:
+# datasets:
+#   - name: "simpleqa"
+#     combine_n: 2
+#     prompt_combine_mode: "and"
+#   - name: "mbpp"
+#     combine_n: 2
+#     prompt_combine_mode: "and"
+#   - name: "math500"
+#     combine_n: 2
+
+# For training with LLM-merged prompts:
+# datasets:
+#   - name: "simpleqa"
+#     combine_n: 2
+#     prompt_combine_mode: "llm"
+#     llm_model_name: "Qwen/Qwen3-8B"
+#     llm_device_map: "auto"
+#   - name: "mbpp"
+#     combine_n: 2
+#     prompt_combine_mode: "llm"
+#     llm_model_name: "Qwen/Qwen3-8B"
+#     llm_device_map: "auto" 
