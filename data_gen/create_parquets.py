@@ -149,7 +149,7 @@ def process_simpleqa(local_dir, num_samples=-1):
 
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
+        test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     return test_dataset
 
 
@@ -200,7 +200,7 @@ def process_mbpp(local_dir, num_samples=-1):
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
+        test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     return test_dataset
 
 
@@ -283,7 +283,7 @@ def process_mbpp_combined(
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
+        test_combined = test_combined[:min(num_samples, len(test_combined))]
     return test_combined
 
 
@@ -346,7 +346,7 @@ def process_simpleqa_combined(
 
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
+        test_combined = test_combined[:min(num_samples, len(test_combined))]
     return test_combined
 
 
@@ -386,7 +386,7 @@ def process_math500(local_dir, num_samples=-1):
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
+        test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     return test_dataset
 
 
@@ -437,8 +437,8 @@ def process_math500_combined(local_dir, n=2, num_samples=-1):
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = random.sample(test_combined, min(num_samples, len(test_combined)))
-        train_combined = random.sample(train_combined, min(num_samples, len(train_combined)))
+        test_combined = test_combined[:min(num_samples, len(test_combined))]
+        train_combined = train_combined[:min(num_samples, len(train_combined))]
     
     return train_combined, test_combined
 
@@ -493,8 +493,8 @@ def process_bcb(local_dir, num_samples=-1):
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        train_dataset = train_dataset.select(range(num_samples))
-        test_dataset = test_dataset.select(range(num_samples))
+        train_dataset = train_dataset.select(range(min(num_samples, len(train_dataset))))
+        test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     return train_dataset, test_dataset
 
 
@@ -548,8 +548,8 @@ def process_bcb_hard(local_dir, num_samples=-1):
     
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        train_dataset = train_dataset.select(random.sample(range(len(train_dataset)), min(num_samples, len(train_dataset))))
-        test_dataset = test_dataset.select(random.sample(range(len(test_dataset)), min(num_samples, len(test_dataset))))
+        train_dataset = train_dataset.select(range(min(num_samples, len(train_dataset))))
+        test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     
     return train_dataset, test_dataset
 
