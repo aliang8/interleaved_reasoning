@@ -33,13 +33,16 @@ def main():
 
     # Create DataFrame with prompts
     data_source = args.input.split("/")[-1].split(".")[0]
-    df = pd.DataFrame([{args.prompt_key: prompt, "data_source": data_source} for prompt in prompts])
+    reward_model = {
+        "ground_truth": "",
+    }
+    df = pd.DataFrame([{args.prompt_key: prompt, "data_source": data_source, "reward_model": reward_model} for prompt in prompts])
     df.to_parquet(parquet_file, index=False)
     
     # Save JSONL file
     with open(jsonl_file, 'w') as f:
         for prompt in prompts:
-            json.dump({args.prompt_key: prompt, "data_source": data_source}, f)
+            json.dump({args.prompt_key: prompt, "data_source": data_source, "reward_model": reward_model}, f)
             f.write('\n')
     
     print(f"Wrote {len(prompts)} prompts to:")
