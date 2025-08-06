@@ -20,22 +20,22 @@ from helpers import StandardizedRewardModel, save_to_parquet, save_jsonl
 # Prompt configurations for plan-first math approach
 PLAN_MATH_PROMPTS = {
     "plan_thought": "Let me start by thinking about this math problem. What are the key concepts, formulas, and what approach should I take? Begin with <think> and end with </think>.",
-    "plan_answer": """Now create a comprehensive high-level plan for solving this math problem in <answer></answer> tags. Your plan should:
+    "plan_answer": """Now create a high-level plan for solving this math problem in <answer></answer> tags. Your plan should:
 
 1. Break down the problem into clear, sequential steps
 2. Identify the key mathematical concepts and formulas needed
 3. Consider different solution approaches and choose the best one
-4. Outline the overall strategy and methodology
+4. Outline the overall structure and flow
 
-Format your response as a numbered outline with bolded steps. Each step should be numbered and the main action/topic should be in bold, followed by a colon and explanation. For example:
+Provide a numbered list of high-level steps to solve this problem. Keep it simple and concise. Do not include any other text.
 
-1. **Understand the problem**: Identify what is being asked and what information is given...
-2. **Identify relevant concepts**: Determine which mathematical concepts and formulas apply...
-3. **Set up the solution**: Write down the equations or expressions needed...
-4. **Solve step by step**: Work through the calculations systematically...
-5. **Verify the answer**: Check if the result makes sense and satisfies the problem...
-
-Provide a comprehensive step-by-step plan that will guide the solution.""",
+Example:
+1. Understand the problem requirements
+2. Identify relevant mathematical concepts
+3. Set up the equations or expressions
+4. Solve the calculations step by step
+5. Verify the solution makes sense
+6. Present the final answer""",
     "implementation_thought": "Now let me think about implementing the plan I just created. How will I translate each step into actual mathematical work? What calculations, formulas, and reasoning do I need? Begin with <think> and end with </think>.",
     "implementation_answer": """Now implement the complete solution based on the plan in <answer></answer> tags. Follow the plan step by step and provide clear, well-explained mathematical work that implements each part of the plan.
 

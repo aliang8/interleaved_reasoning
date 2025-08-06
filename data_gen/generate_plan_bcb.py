@@ -23,21 +23,22 @@ from create_parquets import ADDITIONAL_INSTRUCTION
 # Prompt configurations for plan-first approach
 PLAN_CODING_PROMPTS = {
     "plan_thought": "Let me start by thinking about this problem. What are the requirements, constraints, and what approach should I take? Begin with <think> and end with </think>.",
-    "plan_answer": """Now create a comprehensive high-level plan for solving this problem in <answer></answer> tags. Your plan should:
+    "plan_answer": """Now create a high-level plan for solving this problem in <answer></answer> tags. Your plan should:
 
 1. Break down the problem into clear, sequential steps
 2. Identify the key components and functions needed
 3. Consider edge cases and error handling
 4. Outline the overall structure and flow
 
-Format your response as a numbered outline with bolded steps. Each step should be numbered and the main action/topic should be in bold, followed by a colon and explanation. For example:
+Provide a numbered list of high-level steps to solve this problem. Keep it simple and concise. Do not include any other text.
 
-1. **Parse and validate input**: Check if the input is valid and handle edge cases...
-2. **Extract relevant data**: Process the input to extract the necessary information...
-3. **Implement core logic**: Apply the main algorithm or logic to solve the problem...
-4. **Format and return result**: Ensure the output is in the correct format...
-
-Provide a comprehensive step-by-step plan that will guide the implementation.""",
+Example:
+1. Parse the input data
+2. Validate the requirements  
+3. Design the data structure
+4. Implement the core algorithm
+5. Handle edge cases
+6. Return the result""",
     "implementation_thought": "Now let me think about implementing the plan I just created. How will I translate each step into actual code? What data structures, algorithms, and implementation details do I need? Begin with <think> and end with </think>.",
     "implementation_answer": """Now implement the complete solution based on the plan in <answer></answer> tags. Follow the plan step by step and provide clean, well-commented code that implements each part of the plan.
 
@@ -174,7 +175,7 @@ def generate_plan_coding_dataset(
 
         result_entry = {
             "data_source": "bcb_plan_code_interleave",
-            "prompt": trace_data["prompt"] + "\n" + ADDITIONAL_INSTRUCTION,
+            "prompt": trace_data["prompt"],
             "answer": trace_data["full_response"],
             "reward_model": reward_model.to_dict(),
             "system_instruction_type": "plan_first",
@@ -217,7 +218,7 @@ def main():
     parser.add_argument(
         "--max_tokens_per_turn",
         type=int,
-        default=512,
+        default=1024,
         help="Max tokens per reasoning turn",
     )
     parser.add_argument(

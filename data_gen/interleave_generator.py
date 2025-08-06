@@ -181,6 +181,72 @@ class InterleavedResponsesGenerator:
         
         return content
 
+    def generate(self, messages: List[Dict[str, str]], 
+                max_new_tokens: int = 512,
+                temperature: float = 0.2,
+                top_p: float = 0.7,
+                previous_solutions: List[str] = None) -> str:
+        """Generate a complete response (thinking + solution)."""
+        
+        # Condition on previous solutions if provided
+        if previous_solutions:
+            # Find the last user message and append previous solutions context
+            last_user_msg_idx = -1
+            for i, msg in enumerate(messages):
+                if msg["role"] == "user":
+                    last_user_msg_idx = i
+            
+            if last_user_msg_idx != -1:
+                context = messages[last_user_msg_idx]["content"]
+                context += "\n\nPreviously generated solutions:\n"
+                for idx, sol in enumerate(previous_solutions):
+                    context += f"Solution {idx+1}:\n{sol}\n"
+                context += "\n\nPlease think of a different approach to solve this problem."
+                messages[last_user_msg_idx]["content"] = context
+        
+        # Apply chat template with thinking enabled
+        text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=True
+        )
+        
+        # Tokenize input
+        model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
+        
+        # Generate response
+        with torch.no_grad():
+            generate_kwargs = {
+                **model_inputs,
+                "max_new_tokens": max_new_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "do_sample": True,
+                "pad_token_id": self.tokenizer.eos_token_id,
+                "tokenizer": self.tokenizer
+            }
+            
+            generated_ids = self.model.generate(**generate_kwargs)
+        
+        # Extract only the generated part (remove input)
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+        response = self.tokenizer.decode(output_ids, skip_special_tokens=True).strip()
+        
+        return response
+
+    def extract_solution_from_response(self, response: str) -> str:
+        """Extract the solution part from a response (everything after </think>)."""
+        # Find the </think> token
+        think_end = response.find('</think>')
+        if think_end != -1:
+            # Extract everything after </think>
+            solution = response[think_end + 8:].strip()
+            return solution
+        else:
+            # If no </think> found, return the entire response
+            return response.strip()
+
     def extract_code_from_answer(self, answer: str) -> str:
         """Extract code from an answer response."""
         # First try to extract from <answer> tags
