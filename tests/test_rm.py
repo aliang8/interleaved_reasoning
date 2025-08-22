@@ -46,9 +46,13 @@ def make_dummy_dataproto(prompt, response, data_source="text", rm_infos=None):
 
     return DummyDataProto()
 
+
 def test_code_generation():
     config = OmegaConf.create(
-        {"template_type": "default", "code_evaluator": {"max_concurrent": 1, "execute_sequential": True}}
+        {
+            "template_type": "default",
+            "code_evaluator": {"max_concurrent": 1, "execute_sequential": True},
+        }
     )
     tokenizer = get_tokenizer()
     reward_manager = RewardManager(config, tokenizer)
@@ -59,26 +63,40 @@ def test_code_generation():
 def add(a, b): return a + b
 ```""",
         "unit_tests": [
-            '''
+            """
 import unittest
 class TestAdd(unittest.TestCase):
     def test_add(self):
         self.assertEqual(add(2, 3), 5)
-'''
+"""
         ],
         "required_libs": ["pandas"],
     }
     prompt = tokenizer.encode(prompt, add_special_tokens=True)
     response = tokenizer.encode(response, add_special_tokens=True)
-    data = make_dummy_dataproto(
-        prompt, response, data_source="code", rm_infos=rm_infos
-    )
+    data = make_dummy_dataproto(prompt, response, data_source="code", rm_infos=rm_infos)
     timing_raw = {}
     reward_tensor, extras = reward_manager.compute_rewards(data, timing_raw=timing_raw)
-    print("[Code Generation] Reward tensor:\n", reward_tensor, "\n[Extras]:\n", extras, sep="\n```")
+    print(
+        "[Code Generation] Reward tensor:\n",
+        reward_tensor,
+        "\n[Extras]:\n",
+        extras,
+        sep="\n```",
+    )
+
 
 def test_interleaved_outline_code_unit_test():
-    config = OmegaConf.create({"template_type": "interleave", "code_evaluator": {"max_concurrent": 1, "execute_sequential": True, "auto": "http://10.128.0.30:81"}})
+    config = OmegaConf.create(
+        {
+            "template_type": "interleave",
+            "code_evaluator": {
+                "max_concurrent": 1,
+                "execute_sequential": True,
+                "auto": "http://10.128.0.30:81",
+            },
+        }
+    )
     tokenizer = get_tokenizer()
     reward_manager = RewardManager(config, tokenizer)
     prompt = "Write a function that multiplies two numbers."
@@ -92,26 +110,37 @@ def test_interleaved_outline_code_unit_test():
 def multiply(a, b): return a * b
 ```""",
         "unit_tests": [
-            '''
+            """
 import unittest
 class TestMultiply(unittest.TestCase):
     def test_multiply(self):
         self.assertEqual(multiply(2, 3), 6)
-'''
+"""
         ],
         "required_libs": ["pandas"],
     }
     prompt = tokenizer.encode(prompt, add_special_tokens=True)
     response = tokenizer.encode(response, add_special_tokens=True)
-    data = make_dummy_dataproto(
-        prompt, response, data_source="code", rm_infos=rm_infos
-    )
+    data = make_dummy_dataproto(prompt, response, data_source="code", rm_infos=rm_infos)
     timing_raw = {}
     reward_tensor, extras = reward_manager.compute_rewards(data, timing_raw=timing_raw)
-    print("""[Interleaved] Reward tensor:\n""", reward_tensor, """\n[Extras]:\n""", extras, sep="\n```")
+    print(
+        """[Interleaved] Reward tensor:\n""",
+        reward_tensor,
+        """\n[Extras]:\n""",
+        extras,
+        sep="\n```",
+    )
+
 
 def test_natural_language_qa():
-    config = OmegaConf.create({"template_type": "default", "autorater_service_url": "http://10.128.0.30:81", "code_evaluator": {"max_concurrent": 1, "execute_sequential": True}})
+    config = OmegaConf.create(
+        {
+            "template_type": "default",
+            "autorater_service_url": "http://10.128.0.30:81",
+            "code_evaluator": {"max_concurrent": 1, "execute_sequential": True},
+        }
+    )
     tokenizer = get_tokenizer()
     reward_manager = RewardManager(config, tokenizer)
     prompt = "Who is the president of the United States in 2021?"
@@ -119,13 +148,22 @@ def test_natural_language_qa():
     rm_infos = {"ground_truth": "Joe Biden"}
     prompt_enc = tokenizer.encode(prompt, add_special_tokens=True)
     response_enc = tokenizer.encode(response, add_special_tokens=True)
-    data = make_dummy_dataproto(prompt_enc, response_enc, data_source="text", rm_infos=rm_infos)
+    data = make_dummy_dataproto(
+        prompt_enc, response_enc, data_source="text", rm_infos=rm_infos
+    )
     timing_raw = {}
     reward_tensor, extras = reward_manager.compute_rewards(data, timing_raw=timing_raw)
     print("[QA] Reward tensor:\n", reward_tensor, "\n[Extras]:\n", extras, sep="\n```")
 
+
 def test_math_qa():
-    config = OmegaConf.create({"template_type": "default", "autorater_service_url": "http://10.128.0.30:81", "code_evaluator": {"max_concurrent": 1, "execute_sequential": True}})
+    config = OmegaConf.create(
+        {
+            "template_type": "default",
+            "autorater_service_url": "http://10.128.0.30:81",
+            "code_evaluator": {"max_concurrent": 1, "execute_sequential": True},
+        }
+    )
     tokenizer = get_tokenizer()
     reward_manager = RewardManager(config, tokenizer)
     prompt = "What is 2 + 2?"
@@ -133,13 +171,24 @@ def test_math_qa():
     rm_infos = {"ground_truth": "4"}
     prompt_enc = tokenizer.encode(prompt, add_special_tokens=True)
     response_enc = tokenizer.encode(response, add_special_tokens=True)
-    data = make_dummy_dataproto(prompt_enc, response_enc, data_source="math", rm_infos=rm_infos)
+    data = make_dummy_dataproto(
+        prompt_enc, response_enc, data_source="math", rm_infos=rm_infos
+    )
     timing_raw = {}
     reward_tensor, extras = reward_manager.compute_rewards(data, timing_raw=timing_raw)
-    print("[Math] Reward tensor:\n", reward_tensor, "\n[Extras]:\n", extras, sep="\n```")
+    print(
+        "[Math] Reward tensor:\n", reward_tensor, "\n[Extras]:\n", extras, sep="\n```"
+    )
+
 
 def test_interleaved_qa():
-    config = OmegaConf.create({"template_type": "interleave", "autorater_service_url": "http://10.128.0.30:81", "code_evaluator": {"max_concurrent": 1, "execute_sequential": True}})
+    config = OmegaConf.create(
+        {
+            "template_type": "interleave",
+            "autorater_service_url": "http://10.128.0.30:81",
+            "code_evaluator": {"max_concurrent": 1, "execute_sequential": True},
+        }
+    )
     tokenizer = get_tokenizer()
     reward_manager = RewardManager(config, tokenizer)
     prompt = "Answer the following questions: 1) Who is the president of the United States in 2021? 2) What is the capital of France?"
@@ -147,10 +196,19 @@ def test_interleaved_qa():
     rm_infos = {"ground_truth": ["Joe Biden", "Paris"]}
     prompt_enc = tokenizer.encode(prompt, add_special_tokens=True)
     response_enc = tokenizer.encode(response, add_special_tokens=True)
-    data = make_dummy_dataproto(prompt_enc, response_enc, data_source="text", rm_infos=rm_infos)
+    data = make_dummy_dataproto(
+        prompt_enc, response_enc, data_source="text", rm_infos=rm_infos
+    )
     timing_raw = {}
     reward_tensor, extras = reward_manager.compute_rewards(data, timing_raw=timing_raw)
-    print("[Interleaved QA] Reward tensor:\n", reward_tensor, "\n[Extras]:\n", extras, sep="\n```")
+    print(
+        "[Interleaved QA] Reward tensor:\n",
+        reward_tensor,
+        "\n[Extras]:\n",
+        extras,
+        sep="\n```",
+    )
+
 
 if __name__ == "__main__":
     # test_code_generation()

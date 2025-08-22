@@ -197,7 +197,7 @@ def process_mbpp(local_dir, num_samples=-1):
         return process_fn
 
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
         test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
@@ -280,10 +280,10 @@ def process_mbpp_combined(
         return combined
 
     test_combined = combine_dataset(test_dataset, "test")
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = test_combined[:min(num_samples, len(test_combined))]
+        test_combined = test_combined[: min(num_samples, len(test_combined))]
     return test_combined
 
 
@@ -346,7 +346,7 @@ def process_simpleqa_combined(
 
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = test_combined[:min(num_samples, len(test_combined))]
+        test_combined = test_combined[: min(num_samples, len(test_combined))]
     return test_combined
 
 
@@ -383,7 +383,7 @@ def process_math500(local_dir, num_samples=-1):
         return process_fn
 
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
         test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
@@ -434,12 +434,12 @@ def process_math500_combined(local_dir, n=2, num_samples=-1):
 
     test_combined = combine_dataset(test_prompt, "test")
     train_combined = combine_dataset(training_prompt, "train")
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        test_combined = test_combined[:min(num_samples, len(test_combined))]
-        train_combined = train_combined[:min(num_samples, len(train_combined))]
-    
+        test_combined = test_combined[: min(num_samples, len(test_combined))]
+        train_combined = train_combined[: min(num_samples, len(train_combined))]
+
     return train_combined, test_combined
 
 
@@ -490,10 +490,12 @@ def process_bcb(local_dir, num_samples=-1):
 
     train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        train_dataset = train_dataset.select(range(min(num_samples, len(train_dataset))))
+        train_dataset = train_dataset.select(
+            range(min(num_samples, len(train_dataset)))
+        )
         test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
     return train_dataset, test_dataset
 
@@ -545,12 +547,14 @@ def process_bcb_hard(local_dir, num_samples=-1):
 
     train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
-    
+
     # Sample examples if num_samples is specified and positive
     if num_samples > 0:
-        train_dataset = train_dataset.select(range(min(num_samples, len(train_dataset))))
+        train_dataset = train_dataset.select(
+            range(min(num_samples, len(train_dataset)))
+        )
         test_dataset = test_dataset.select(range(min(num_samples, len(test_dataset))))
-    
+
     return train_dataset, test_dataset
 
 
@@ -560,9 +564,9 @@ def process_datasets_from_config(config):
 
     for dataset_config in config["datasets"]:
         dataset_name = dataset_config["name"]
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Processing dataset: {dataset_name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         if dataset_name == "knights_and_knaves":
             subsets = dataset_config.get("subsets", ["2ppl"])
@@ -593,7 +597,9 @@ def process_datasets_from_config(config):
                     f"{dataset_name}_combined_{prompt_combine_mode}_{combine_n}"
                 ] = (None, test_dataset)
             else:
-                test_dataset = process_simpleqa(config["local_dir"], num_samples=num_samples)
+                test_dataset = process_simpleqa(
+                    config["local_dir"], num_samples=num_samples
+                )
                 all_datasets[dataset_name] = (None, test_dataset)
 
         elif dataset_name == "mbpp":
@@ -617,7 +623,9 @@ def process_datasets_from_config(config):
                     f"{dataset_name}_combined_{prompt_combine_mode}_{combine_n}"
                 ] = (None, test_dataset)
             else:
-                test_dataset = process_mbpp(config["local_dir"], num_samples=num_samples)
+                test_dataset = process_mbpp(
+                    config["local_dir"], num_samples=num_samples
+                )
                 all_datasets[dataset_name] = (None, test_dataset)
 
         elif dataset_name == "math500":
@@ -632,15 +640,21 @@ def process_datasets_from_config(config):
                     test_dataset,
                 )
             else:
-                test_dataset = process_math500(config["local_dir"], num_samples=num_samples)
+                test_dataset = process_math500(
+                    config["local_dir"], num_samples=num_samples
+                )
                 all_datasets[dataset_name] = (None, test_dataset)
         elif dataset_name == "bcb_hard":
             num_samples = dataset_config.get("num_samples", -1)
-            train_dataset, test_dataset = process_bcb_hard(config["local_dir"], num_samples=num_samples)
+            train_dataset, test_dataset = process_bcb_hard(
+                config["local_dir"], num_samples=num_samples
+            )
             all_datasets[dataset_name] = (train_dataset, test_dataset)
         elif dataset_name == "bcb":
             num_samples = dataset_config.get("num_samples", -1)
-            train_dataset, test_dataset = process_bcb(config["local_dir"], num_samples=num_samples)
+            train_dataset, test_dataset = process_bcb(
+                config["local_dir"], num_samples=num_samples
+            )
             all_datasets[dataset_name] = (train_dataset, test_dataset)
         else:
             print(f"Warning: Unknown dataset {dataset_name}, skipping...")

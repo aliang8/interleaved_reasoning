@@ -19,7 +19,7 @@ from helpers import StandardizedRewardModel, save_to_parquet, save_jsonl
 
 # Prompt configurations for plan-first math approach
 PLAN_MATH_PROMPTS = {
-    "plan_thought": "Let me start by thinking about this math problem. What are the key concepts, formulas, and what approach should I take? Begin with <think> and end with </think>.",
+    "plan_thought": "Start by thinking about a plan for solving this math problem. What are the key concepts, formulas, and what approach should I take? Begin with <think> and end with </think>. Only think about the plan / approach and do not include any other text in your reasoning.",
     "plan_answer": """Now create a high-level plan for solving this math problem in <answer></answer> tags. Your plan should:
 
 1. Break down the problem into clear, sequential steps
@@ -28,24 +28,9 @@ PLAN_MATH_PROMPTS = {
 4. Outline the overall structure and flow
 
 Provide a numbered list of high-level steps to solve this problem. Keep it simple and concise. Do not include any other text.
-
-Example:
-1. Understand the problem requirements
-2. Identify relevant mathematical concepts
-3. Set up the equations or expressions
-4. Solve the calculations step by step
-5. Verify the solution makes sense
-6. Present the final answer""",
-    "implementation_thought": "Now let me think about implementing the plan I just created. How will I translate each step into actual mathematical work? What calculations, formulas, and reasoning do I need? Begin with <think> and end with </think>.",
-    "implementation_answer": """Now implement the complete solution based on the plan in <answer></answer> tags. Follow the plan step by step and provide clear, well-explained mathematical work that implements each part of the plan.
-
-Make sure your implementation:
-- Follows the plan structure you outlined
-- Shows all key calculations and steps
-- Explains the reasoning behind each step
-- Uses proper mathematical notation
-- Handles all the concepts mentioned in the plan
-- Provides a clear final answer""",
+""",
+    "implementation_thought": "Now think about implementing the plan to solve this math problem. Think about how to translate each step into actual mathematical work? What calculations, formulas, and reasoning do you need? Begin with <think> and end with </think>. Only think about the implementation and do not include any other text in your reasoning.",
+    "implementation_answer": "Given the reasoning, now give me the final answer in <answer></answer> tags based on the reasoning. Just give me the answer, do not include any other text.",
 }
 
 
@@ -84,48 +69,58 @@ def generate_plan_interleaved_math_trace(
 
         thinking_response = generator.generate_thoughts(
             messages,
-            max_new_tokens=max_new_tokens_per_turn,
+            max_new_tokens=max_new_tokens_per_turn * 2,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
 
-        messages.append({"role": "assistant", "content": thinking_response})
+        messages.append({"role": "user", "content": thinking_response})
 
         # Step 2: Generate high-level plan
         messages.append({"role": "user", "content": PLAN_MATH_PROMPTS["plan_answer"]})
 
         plan_response = generator.generate_answer(
             messages,
-            max_new_tokens=max_new_tokens_per_turn * 2,
+            max_new_tokens=512,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
 
-        messages.append({"role": "assistant", "content": plan_response})
+        messages.append({"role": "user", "content": plan_response})
 
         # Step 3: Think about implementation
-        messages.append({"role": "user", "content": PLAN_MATH_PROMPTS["implementation_thought"]})
+        messages.append(
+            {"role": "user", "content": PLAN_MATH_PROMPTS["implementation_thought"]}
+        )
 
         implementation_thinking_response = generator.generate_thoughts(
             messages,
-            max_new_tokens=max_new_tokens_per_turn,
-            temperature=temperature,
-            top_p=top_p,
-        )
-
-        messages.append({"role": "assistant", "content": implementation_thinking_response})
-
-        # Step 4: Implement the solution based on the plan
-        messages.append({"role": "user", "content": PLAN_MATH_PROMPTS["implementation_answer"]})
-
-        implementation_response = generator.generate_answer(
-            messages,
             max_new_tokens=max_new_tokens_per_turn * 2,
             temperature=temperature,
             top_p=top_p,
+        )[0]
+
+        messages.append({"role": "user", "content": implementation_thinking_response})
+
+        # Step 4: Implement the solution based on the plan
+        messages.append(
+            {"role": "user", "content": PLAN_MATH_PROMPTS["implementation_answer"]}
         )
 
-        messages.append({"role": "assistant", "content": implementation_response})
+        implementation_response = generator.generate_answer(
+            messages,
+            max_new_tokens=512,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=False,
+        )[0]
+
+        print("Problem:")
+        print(problem_text)
+        print("Plan:")
+        print(plan_response)
+        print("Implementation:")
+        print(implementation_response)
 
         # Build complete interleaved response
         full_interleaved = f"{thinking_response}\n\n{plan_response}\n\n{implementation_thinking_response}\n\n{implementation_response}"
@@ -142,7 +137,9 @@ def generate_plan_math_dataset(
     max_new_tokens_per_turn: int = 512,
 ) -> List[Dict[str, Any]]:
     """Generate plan-first interleaved math traces for multiple problems."""
-    print(f"Generating plan-first math dataset with {num_samples} samples from MATH500...")
+    print(
+        f"Generating plan-first math dataset with {num_samples} samples from MATH500..."
+    )
 
     # Load MATH500 problems
     problems = load_dataset("HuggingFaceH4/MATH-500")
@@ -151,9 +148,10 @@ def generate_plan_math_dataset(
 
     entries = []
 
-    for i, problem in enumerate(tqdm(test_problems, desc=f"Generating plan-first math traces")):
-
-        print(f"\n  Problem {i+1}/{len(test_problems)}")
+    for i, problem in enumerate(
+        tqdm(test_problems, desc=f"Generating plan-first math traces")
+    ):
+        print(f"\n  Problem {i + 1}/{len(test_problems)}")
 
         # Generate interleaved trace
         trace_data = generate_plan_interleaved_math_trace(
@@ -210,7 +208,7 @@ def main():
     parser.add_argument(
         "--max_tokens_per_turn",
         type=int,
-        default=512,
+        default=1024,
         help="Max tokens per reasoning turn",
     )
     parser.add_argument(
@@ -246,9 +244,9 @@ def main():
         jsonl_file = os.path.join(args.output_dir, f"{filename_prefix}.jsonl")
         save_jsonl(math_data, jsonl_file)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("PLAN-FIRST MATH DATASET GENERATION COMPLETE")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Dataset: MATH500 (Plan-First Approach)")
         print(f"Total problems processed: {len(math_data)}")
 
@@ -264,4 +262,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

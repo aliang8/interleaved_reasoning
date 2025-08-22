@@ -114,15 +114,73 @@ torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
     use_remove_padding=True \
     ulysses_sequence_parallel_size=4 
 
+  
+torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
+    data.train_files="[data/sft/bcb_plan_code_interleave.parquet]" \
+    data.val_files="[data/sft/bcb_plan_code_interleave.parquet]" \
+    data.train_batch_size=8 \
+    data.prompt_key=prompt \
+    data.response_key=answer \
+    data.micro_batch_size_per_gpu=1 \
+    model.partial_pretrain=Qwen/Qwen3-8B \
+    trainer.project_name=interleaved-sft \
+    trainer.experiment_name=interleaved-sft-Qwen3-8B_bcb_plan_code_interleave \
+    trainer.total_epochs=100 \
+    trainer.logger=['console','wandb'] \
+    use_remove_padding=True \
+    ulysses_sequence_parallel_size=4 
+
+torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
+    data.train_files="[data/sft/underspecified_handling.parquet]" \
+    data.val_files="[data/sft/underspecified_handling.parquet]" \
+    data.train_batch_size=8 \
+    data.prompt_key=prompt \
+    data.response_key=answer \
+    data.micro_batch_size_per_gpu=1 \
+    model.partial_pretrain=Qwen/Qwen3-8B \
+    trainer.project_name=interleaved-sft \
+    trainer.experiment_name=interleaved-sft-Qwen3-8B_bcb_one_interpretation \
+    trainer.total_epochs=50 \
+    trainer.logger=['console','wandb'] \
+    use_remove_padding=True \
+    ulysses_sequence_parallel_size=4 
+
+
+torchrun --nnodes=1 --nproc_per_node=8 -m verl.trainer.fsdp_sft_trainer \
+    data.train_files="[data/sft/math500_plan_interleave.parquet]" \
+    data.val_files="[data/sft/math500_plan_interleave.parquet]" \
+    data.train_batch_size=8 \
+    data.prompt_key=prompt \
+    data.response_key=answer \
+    data.micro_batch_size_per_gpu=1 \
+    model.partial_pretrain=Qwen/Qwen3-8B \
+    trainer.project_name=interleaved-sft \
+    trainer.experiment_name=interleaved-sft-Qwen3-8B_math500_plan_interleave \
+    trainer.total_epochs=100 \
+    trainer.logger=['console','wandb'] \
+    use_remove_padding=True \
+    ulysses_sequence_parallel_size=4 
+
+
+python3 -m verl.trainer.generate_validation_rollouts \
+  --checkpoint_dir=Qwen/Qwen3-8B \
+  --val_data=[data/sft/bcb_plan_code_interleave.parquet] 
+
+python3 -m verl.trainer.generate_validation_rollouts \
+  --checkpoint_dir=checkpoints/interleaved-sft/interleaved-sft-Qwen3-8B_bcb_plan_code_interleave/global_step_300/ \
+  --val_data=[data/sft/bcb_plan_code_interleave.parquet] 
+
+python3 -m verl.trainer.generate_validation_rollouts \
+  --checkpoint_dir=checkpoints/interleaved-sft/interleaved-sft-Qwen3-8B_bcb_plan_code_interleave/global_step_300/ \
+  --val_data=[data/rl_eval/math500_test.parquet] 
+
 
 python3 -m verl.trainer.generate_validation_rollouts \
   --checkpoint_dir=checkpoints/interleaved-sft/test/global_step_1000 \
-  --base_model_path=Qwen/Qwen3-8B \
   --val_data=[reasoning_data/interleaved_listing_dataset_train.parquet,reasoning_data/interleaved_listing_dataset_test.parquet] 
 
 python3 -m verl.trainer.generate_validation_rollouts \
   --checkpoint_dir=checkpoints/interleaved-sft/interleaved-sft-Qwen3-8B_trip/global_step_200/ \
-  --base_model_path=Qwen/Qwen3-8B \
   --val_data=[trip_planning_data/custom_prompts.txt]
 
 python3 -m verl.trainer.generate_validation_rollouts \

@@ -1,0 +1,107 @@
+{
+    "model": {
+        "path": "Qwen/Qwen3-8B",
+        "tokenizer_path": "Qwen/Qwen3-8B",
+        "trust_remote_code": false,
+        "use_remove_padding": false,
+        "use_fused_kernels": false,
+        "enable_gradient_checkpointing": false,
+        "use_liger": false,
+        "enable_activation_offload": false,
+        "lora_rank": 0,
+        "override_config": {},
+        "external_lib": null,
+        "use_shm": false
+    },
+    "actor": {
+        "strategy": "fsdp",
+        "fsdp_config": {
+            "fsdp_size": -1,
+            "param_offload": false,
+            "optimizer_offload": false,
+            "wrap_policy": null,
+            "forward_prefetch": true,
+            "model_dtype": "bfloat16",
+            "mixed_precision": {
+                "param_dtype": "bfloat16",
+                "reduce_dtype": "float32",
+                "buffer_dtype": "float32"
+            }
+        },
+        "optim": {
+            "lr": 1e-6,
+            "betas": [0.9, 0.999],
+            "weight_decay": 1e-2,
+            "total_training_steps": 1000,
+            "lr_warmup_steps": 0,
+            "warmup_style": "constant"
+        },
+        "ppo_mini_batch_size": 1,
+        "ppo_micro_batch_size_per_gpu": 1,
+        "checkpoint": {
+            "contents": ["model", "optimizer", "lr_scheduler"]
+        }
+    },
+    "rollout": {
+        "name": "vllm_interrupt_thinking",
+        "mode": "sync",
+        "prompt_length": 1024,
+        "response_length": 4096,
+        "max_model_len": null,
+        "n": 1,
+        "template_type": "interleave",
+        "tensor_model_parallel_size": 1,
+        "dtype": "bfloat16",
+        "gpu_memory_utilization": 0.8,
+        "enforce_eager": false,
+        "free_cache_engine": false,
+        "load_format": "auto",
+        "disable_log_stats": true,
+        "max_num_batched_tokens": 2048,
+        "max_num_seqs": 2,
+        "enable_chunked_prefill": false,
+        "disable_custom_all_reduce": true,
+        "seed": 42,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": -1,
+        "do_sample": true,
+        "log_prob_micro_batch_size": 2,
+        "log_prob_micro_batch_size_per_gpu": 2,
+        "log_prob_max_token_len_per_gpu": 1024,
+        "log_prob_use_dynamic_bsz": false,
+        "mcp_mode": "direct_article",
+        "mcp_timeout": 10,
+        "mcp_max_article_tokens": 2000,
+        "val_kwargs": {
+            "top_k": -1,
+            "top_p": 1.0,
+            "temperature": 0,
+            "n": 1,
+            "do_sample": true
+        },
+        "engine_kwargs": {
+            "vllm": {
+                "swap_space": 4
+            }
+        },
+        "max_turns": 2,
+        "n_candidates": 10,
+        "use_similarity_filtering": true,
+        "similarity_threshold": 0.85,
+        "enable_iterative_reprompting": false,
+        "max_iterative_iterations": 3,
+        "additional_answer_tokens": 100,
+        "force_thinking_end": true
+    },
+    "ref": {
+        "fsdp_config": {
+            "param_offload": true,
+            "wrap_policy": null,
+            "forward_prefetch": true
+        },
+        "log_prob_micro_batch_size_per_gpu": 1,
+        "log_prob_max_token_len_per_gpu": 1024,
+        "log_prob_use_dynamic_bsz": false
+    }
+}

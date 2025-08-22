@@ -19,7 +19,6 @@ from helpers import StandardizedRewardModel, save_to_parquet, save_jsonl
 from create_parquets import ADDITIONAL_INSTRUCTION
 
 
-
 # Prompt configurations for plan-first approach
 PLAN_CODING_PROMPTS = {
     "plan_thought": "Let me start by thinking about this problem. What are the requirements, constraints, and what approach should I take? Begin with <think> and end with </think>.",
@@ -85,7 +84,9 @@ def generate_plan_interleaved_coding_trace(
         messages = [{"role": "user", "content": f"{prompt}"}]
 
         # Step 1: Think about the prompt/problem
-        messages.append({"role": "user", "content": PLAN_CODING_PROMPTS["plan_thought"]})
+        messages.append(
+            {"role": "user", "content": PLAN_CODING_PROMPTS["plan_thought"]}
+        )
 
         thinking_response = generator.generate_thoughts(
             messages,
@@ -109,7 +110,9 @@ def generate_plan_interleaved_coding_trace(
         messages.append({"role": "assistant", "content": plan_response})
 
         # Step 3: Think about implementation
-        messages.append({"role": "user", "content": PLAN_CODING_PROMPTS["implementation_thought"]})
+        messages.append(
+            {"role": "user", "content": PLAN_CODING_PROMPTS["implementation_thought"]}
+        )
 
         implementation_thinking_response = generator.generate_thoughts(
             messages,
@@ -118,10 +121,14 @@ def generate_plan_interleaved_coding_trace(
             top_p=top_p,
         )
 
-        messages.append({"role": "assistant", "content": implementation_thinking_response})
+        messages.append(
+            {"role": "assistant", "content": implementation_thinking_response}
+        )
 
         # Step 4: Implement the solution based on the plan
-        messages.append({"role": "user", "content": PLAN_CODING_PROMPTS["implementation_answer"]})
+        messages.append(
+            {"role": "user", "content": PLAN_CODING_PROMPTS["implementation_answer"]}
+        )
 
         implementation_response = generator.generate_answer(
             messages,
@@ -148,7 +155,9 @@ def generate_plan_coding_dataset(
     max_new_tokens_per_turn: int = 512,
 ) -> List[Dict[str, Any]]:
     """Generate plan-first interleaved coding traces for multiple problems."""
-    print(f"Generating plan-first coding dataset with {num_samples} samples from BigCodeBench...")
+    print(
+        f"Generating plan-first coding dataset with {num_samples} samples from BigCodeBench..."
+    )
 
     # Load BigCodeBench problems
     problems = load_dataset("bigcode/bigcodebench-hard", split="v0.1.4")
@@ -156,9 +165,12 @@ def generate_plan_coding_dataset(
 
     entries = []
 
-    for i, problem in enumerate(tqdm(problems, desc=f"Generating plan-first coding traces")):
-
-        print(f"\n  Problem {i+1}/{len(problems)}: {problem.get('task_id', 'Unknown')}")
+    for i, problem in enumerate(
+        tqdm(problems, desc=f"Generating plan-first coding traces")
+    ):
+        print(
+            f"\n  Problem {i + 1}/{len(problems)}: {problem.get('task_id', 'Unknown')}"
+        )
 
         # Generate interleaved trace
         trace_data = generate_plan_interleaved_coding_trace(
@@ -254,9 +266,9 @@ def main():
         jsonl_file = os.path.join(args.output_dir, f"{filename_prefix}.jsonl")
         save_jsonl(coding_data, jsonl_file)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("PLAN-FIRST CODING DATASET GENERATION COMPLETE")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Dataset: BigCodeBench (Plan-First Approach)")
         print(f"Total problems processed: {len(coding_data)}")
 
@@ -272,4 +284,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

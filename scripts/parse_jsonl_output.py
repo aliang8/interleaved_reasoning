@@ -15,15 +15,16 @@ import sys
 
 class Colors:
     """ANSI color codes for terminal output."""
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    END = '\033[0m'
+
+    HEADER = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    END = "\033[0m"
 
 
 def print_colored(text: str, color: str = Colors.END):
@@ -38,14 +39,14 @@ def print_separator(char: str = "=", length: int = 80, color: str = Colors.BLUE)
 
 def extract_prompt(entry: Dict[str, Any]) -> Optional[str]:
     """Extract prompt from various possible formats in the JSONL entry."""
-    
+
     # Try different common field names for prompts
     if "prompt" in entry:
         return entry["prompt"]
-    
+
     if "question" in entry:
         return entry["question"]
-    
+
     # Try to extract from messages format
     if "messages" in entry:
         messages = entry["messages"]
@@ -58,21 +59,21 @@ def extract_prompt(entry: Dict[str, Any]) -> Optional[str]:
             last_msg = messages[-1]
             if isinstance(last_msg, dict):
                 return last_msg.get("content", "")
-    
+
     # Try to extract from conversation format
     if "conversation" in entry:
         conv = entry["conversation"]
         if isinstance(conv, list) and len(conv) > 0:
             return conv[0].get("content", "")
-    
+
     return None
 
 
 def extract_response(entry: Dict[str, Any]) -> Optional[str]:
     """Extract response from various possible formats in the JSONL entry."""
-    
+
     response_fields = ["generated_response", "answer", "response"]
-    
+
     for field in response_fields:
         if field in entry:
             response = entry[field]
@@ -81,7 +82,7 @@ def extract_response(entry: Dict[str, Any]) -> Optional[str]:
             elif isinstance(response, list) and len(response) > 0:
                 # Handle list of responses (take first one)
                 return str(response[0])
-    
+
     # Try to extract from responses list
     if "responses" in entry:
         responses = entry["responses"]
@@ -94,7 +95,7 @@ def extract_response(entry: Dict[str, Any]) -> Optional[str]:
                 for field in ["text", "content", "response", "output"]:
                     if field in first_response:
                         return str(first_response[field])
-    
+
     # Try to extract from outputs
     if "outputs" in entry:
         outputs = entry["outputs"]
@@ -104,11 +105,12 @@ def extract_response(entry: Dict[str, Any]) -> Optional[str]:
     if "raw_response" in entry:
         return entry["raw_response"]
 
-    
     return None
 
 
-def extract_metadata(entry: Dict[str, Any], fields: Optional[List[str]] = None) -> Dict[str, Any]:
+def extract_metadata(
+    entry: Dict[str, Any], fields: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """Extract selected metadata fields from the entry.
 
     If ``fields`` is provided, only those keys are returned (if present).
@@ -116,22 +118,34 @@ def extract_metadata(entry: Dict[str, Any], fields: Optional[List[str]] = None) 
     """
 
     metadata = {}
-    
+
     # Default metadata fields to look for when `fields` is None
     default_fields = [
-        "model", "temperature", "max_tokens", "timestamp", 
-        "step", "num_trajectories", "system_template_type",
-        "generation_time", "tokens_generated", "category",
-        "generation_method", "raw_response", "rubric_response",
-        "output", "ground_truth", "autorater_scores", "format_scores"
+        "model",
+        "temperature",
+        "max_tokens",
+        "timestamp",
+        "step",
+        "num_trajectories",
+        "system_template_type",
+        "generation_time",
+        "tokens_generated",
+        "category",
+        "generation_method",
+        "raw_response",
+        "rubric_response",
+        "output",
+        "ground_truth",
+        "autorater_scores",
+        "format_scores",
     ]
-    
+
     search_fields = fields if fields is not None else default_fields
 
     for field in search_fields:
         if field in entry:
             metadata[field] = entry[field]
-    
+
     # Extract from nested config or params
     if "config" in entry:
         config = entry["config"]
@@ -139,14 +153,14 @@ def extract_metadata(entry: Dict[str, Any], fields: Optional[List[str]] = None) 
             for field in search_fields:
                 if field in config:
                     metadata[field] = config[field]
-    
+
     if "params" in entry:
         params = entry["params"]
         if isinstance(params, dict):
             for field in search_fields:
                 if field in params:
                     metadata[field] = params[field]
-    
+
     return metadata
 
 
@@ -154,17 +168,17 @@ def format_text(text: str, max_width: int = 100) -> str:
     """Format text with word wrapping and preserve structure."""
     if not text:
         return ""
-    
+
     # Preserve existing line breaks
-    lines = text.split('\n')
+    lines = text.split("\n")
     formatted_lines = []
-    
+
     for line in lines:
         if len(line) <= max_width:
             formatted_lines.append(line)
         else:
             # Simple word wrapping
-            words = line.split(' ')
+            words = line.split(" ")
             current_line = ""
             for word in words:
                 if len(current_line + " " + word) <= max_width:
@@ -175,17 +189,19 @@ def format_text(text: str, max_width: int = 100) -> str:
                     current_line = word
             if current_line:
                 formatted_lines.append(current_line)
-    
-    return '\n'.join(formatted_lines)
+
+    return "\n".join(formatted_lines)
 
 
-def display_entry(entry: Dict[str, Any], index: int, show_metadata: Union[bool, List[str]] = False):
+def display_entry(
+    entry: Dict[str, Any], index: int, show_metadata: Union[bool, List[str]] = False
+):
     """Display a single JSONL entry with formatting."""
-    
+
     print_separator("=", 80, Colors.BLUE)
     print_colored(f"Entry #{index + 1}", Colors.BOLD + Colors.CYAN)
     print_separator("-", 80, Colors.CYAN)
-    
+
     # Extract and display prompt
     prompt = extract_prompt(entry)
     if prompt:
@@ -195,7 +211,7 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: Union[bool, 
     else:
         print_colored("⚠️  No prompt found in entry", Colors.YELLOW)
         print()
-    
+
     # Extract and display response
     response = extract_response(entry)
     if response:
@@ -205,7 +221,7 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: Union[bool, 
     else:
         print_colored("⚠️  No response found in entry", Colors.YELLOW)
         print()
-    
+
     # Display metadata if requested
     if show_metadata:
         # Determine specific fields to extract
@@ -216,66 +232,80 @@ def display_entry(entry: Dict[str, Any], index: int, show_metadata: Union[bool, 
             for key, value in metadata.items():
                 print(f"  {key}: {value}")
             print()
-    
+
     # Show available fields for debugging
     available_fields = list(entry.keys())
     print_colored(f"Available fields: {', '.join(available_fields)}", Colors.CYAN)
     print()
 
 
-def parse_jsonl_file(file_path: str, max_entries: Optional[int] = None, show_metadata: Union[bool, List[str]] = False):
+def parse_jsonl_file(
+    file_path: str,
+    max_entries: Optional[int] = None,
+    show_metadata: Union[bool, List[str]] = False,
+):
     """Parse and display contents of a JSONL file."""
-    
+
     if not Path(file_path).exists():
         print_colored(f"❌ File not found: {file_path}", Colors.RED)
         return
-    
+
     print_colored(f"📁 Parsing JSONL file: {file_path}", Colors.BOLD + Colors.BLUE)
     print()
-    
+
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             entries = []
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     entry = json.loads(line)
                     entries.append(entry)
                 except json.JSONDecodeError as e:
-                    print_colored(f"⚠️  Skipping invalid JSON on line {line_num}: {e}", Colors.YELLOW)
+                    print_colored(
+                        f"⚠️  Skipping invalid JSON on line {line_num}: {e}",
+                        Colors.YELLOW,
+                    )
                     continue
-                
+
                 # Stop if we've reached the maximum
                 if max_entries and len(entries) >= max_entries:
                     break
-        
-        print_colored(f"✅ Loaded {len(entries)} entries from {file_path}", Colors.GREEN)
-        
+
+        print_colored(
+            f"✅ Loaded {len(entries)} entries from {file_path}", Colors.GREEN
+        )
+
         if not entries:
             print_colored("No valid entries found in file.", Colors.YELLOW)
             return
-        
+
         print()
-        
+
         # Display entries
         for i, entry in enumerate(entries):
             display_entry(entry, i, show_metadata)
-            
+
             # Add pause for large outputs
             if i > 0 and (i + 1) % 5 == 0 and i + 1 < len(entries):
-                print_colored(f"--- Displayed {i + 1}/{len(entries)} entries ---", Colors.CYAN)
+                print_colored(
+                    f"--- Displayed {i + 1}/{len(entries)} entries ---", Colors.CYAN
+                )
                 if max_entries is None or len(entries) > 10:
                     response = input("Press Enter to continue, 'q' to quit: ")
-                    if response.lower() == 'q':
+                    if response.lower() == "q":
                         break
                 print()
-        
+
         print_separator("=", 80, Colors.BLUE)
-        print_colored(f"✅ Finished displaying {min(i + 1, len(entries))} entries", Colors.BOLD + Colors.GREEN)
-        
+        print_colored(
+            f"✅ Finished displaying {min(i + 1, len(entries))} entries",
+            Colors.BOLD + Colors.GREEN,
+        )
+
     except Exception as e:
         print_colored(f"❌ Error reading file: {e}", Colors.RED)
 
@@ -289,25 +319,36 @@ Examples:
   python parse_jsonl_output.py output.jsonl
   python parse_jsonl_output.py results.jsonl --max_entries 5
   python parse_jsonl_output.py data.jsonl --show_metadata
-        """
+        """,
     )
-    
+
     parser.add_argument("jsonl_file", help="Path to the JSONL file to parse")
-    parser.add_argument("--max_entries", "-n", type=int, default=None,
-                       help="Maximum number of entries to display (default: all)")
-    parser.add_argument("--show_metadata", "-m", nargs="*", default=None,
-                       help="Show metadata fields. Use without arguments to show all metadata or specify field names to filter.")
-    parser.add_argument("--no_color", action="store_true",
-                       help="Disable colored output")
-    
+    parser.add_argument(
+        "--max_entries",
+        "-n",
+        type=int,
+        default=None,
+        help="Maximum number of entries to display (default: all)",
+    )
+    parser.add_argument(
+        "--show_metadata",
+        "-m",
+        nargs="*",
+        default=None,
+        help="Show metadata fields. Use without arguments to show all metadata or specify field names to filter.",
+    )
+    parser.add_argument(
+        "--no_color", action="store_true", help="Disable colored output"
+    )
+
     args = parser.parse_args()
-    
+
     # Disable colors if requested or if output is redirected
     if args.no_color or not sys.stdout.isatty():
         for attr in dir(Colors):
-            if not attr.startswith('_'):
-                setattr(Colors, attr, '')
-    
+            if not attr.startswith("_"):
+                setattr(Colors, attr, "")
+
     # Determine show_metadata parameter based on provided arguments
     if args.show_metadata is None:
         show_metadata_param = False
@@ -320,4 +361,4 @@ Examples:
 
 
 if __name__ == "__main__":
-    main() 
+    main()

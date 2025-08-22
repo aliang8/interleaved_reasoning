@@ -1,37 +1,5 @@
-modelscope 
-addict
-lm_eval[wandb]
-ipdb
-gpustat
-omegaconf
-tensordict
-# flash_attn==2.5.8
-hf_transfer
-
-# verl
-accelerate
-codetiming
-datasets
-dill
-hydra-core
-numpy
-pandas
-peft
-pyarrow>=15.0.0
-pybind11
-pylatexenc
-ray[default]>=2.10
-tensordict<=0.6.2
-torchdata
-transformers
-vllm==0.8.4
-wandb
-matplotlib
-seaborn
-
-# mcp
-wikipedia-mcp
-
-flash-attn==2.5.0
-hf_transfer
-math-verify
+pandas>=1.5.0
+pyarrow>=10.0.0
+fastparquet>=0.8.0
+sentence-transformers>=2.2.0
+scikit-learn>=1.0.0

@@ -72,11 +72,13 @@ class GeminiAPIClient:  # pylint: disable=too-many-public-methods
         self._genai_client = None
         self._session: Optional[requests.Session] = None
 
-        print(f"Initializing GeminiAPIClient with use_genai={self._use_genai} and enable_thinking={self.enable_thinking}")
+        print(
+            f"Initializing GeminiAPIClient with use_genai={self._use_genai} and enable_thinking={self.enable_thinking}"
+        )
         if self._use_genai:
             print("Using genai client")
             if not GENAI_AVAILABLE:
-                raise ImportError(  
+                raise ImportError(
                     "google-genai library not available but use_genai_client=True. "
                     "Install it with: pip install google-genai"
                 )
@@ -254,10 +256,12 @@ class GeminiAPIClient:  # pylint: disable=too-many-public-methods
             response = self._session.post(url, json=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
-            result.update({
-                "api_method": "rest_api",
-                "thinking_enabled": False,
-            })
+            result.update(
+                {
+                    "api_method": "rest_api",
+                    "thinking_enabled": False,
+                }
+            )
             return result
         except requests.exceptions.RequestException as exc:  # pragma: no cover
             return {
@@ -288,4 +292,4 @@ class GeminiAPIClient:  # pylint: disable=too-many-public-methods
             blended.append(f"<thinking>\n{thinking_block}\n</thinking>")
         if texts:
             blended.append("\n\n".join(texts))
-        return "\n\n".join(blended) 
+        return "\n\n".join(blended)

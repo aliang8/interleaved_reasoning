@@ -194,8 +194,9 @@ def generate_coding_dataset(
     entries = []
 
     for i, problem in enumerate(tqdm(problems, desc=f"Generating coding traces")):
-
-        print(f"\n  Problem {i+1}/{len(problems)}: {problem.get('task_id', 'Unknown')}")
+        print(
+            f"\n  Problem {i + 1}/{len(problems)}: {problem.get('task_id', 'Unknown')}"
+        )
 
         # Generate interleaved trace
         trace_data = generate_interleaved_coding_trace(
@@ -290,9 +291,9 @@ def main():
         jsonl_file = os.path.join(args.output_dir, f"{filename_prefix}.jsonl")
         save_jsonl(coding_data, jsonl_file)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("CODING DATASET GENERATION COMPLETE")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Dataset: BigCodeBench")
         print(f"Total problems processed: {len(coding_data)}")
 

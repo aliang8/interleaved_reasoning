@@ -19,3 +19,6 @@ old/*
 *.parquet
 *_old/*
 logs/*
+data/*
+*.jsonl 
+*.parquet

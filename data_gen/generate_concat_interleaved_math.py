@@ -194,8 +194,7 @@ def generate_concat_dataset(
 
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth=trace_data["combined_answers"],
-            style="rule"
+            ground_truth=trace_data["combined_answers"], style="rule"
         )
 
         # Create result entry for training (following create_parquets format)
@@ -293,9 +292,9 @@ def main():
         jsonl_file = os.path.join(args.output_dir, f"{filename_prefix}.jsonl")
         save_jsonl(concat_data, jsonl_file)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("CONCAT MATH DATASET GENERATION COMPLETE")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Dataset: math500")
         print(f"Total paired problems processed: {len(concat_data)}")
 
