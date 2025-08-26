@@ -81,7 +81,7 @@ class InterleavedResponsesGenerator:
             }
 
             generated_ids = self.model.generate(**generate_kwargs)
-
+            
         # Extract only the generated part (remove input)
         responses = []
         for ids in generated_ids:

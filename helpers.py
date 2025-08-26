@@ -127,15 +127,15 @@ def compute_completion_rate(
 
 
 def extract_solution_from_response(
-    response_text: str, template_type: str = "default"
+    response_text: str, template_type: str = "default", enable_thinking: bool = False
 ) -> str:
     """
     Extract solution from response text.
-
+    
     Args:
         response_text: The full response text
         template_type: Template type used for generation
-
+        
     Returns:
         Extracted solution or empty string if not found
     """
@@ -145,33 +145,42 @@ def extract_solution_from_response(
         answer_matches = re.findall(
             answer_pattern, response_text, re.DOTALL | re.IGNORECASE
         )
-
+        
         if answer_matches:
             # Use the last answer block
             last_answer = answer_matches[-1].strip()
             return last_answer.strip()
-
+    
     # For other template types, use the original logic
     # First, extract everything after </think> if it exists
     if "</think>" in response_text:
         parts = response_text.split("</think>")
         if len(parts) > 1:
             response_text = parts[1].strip()
+    
+        return response_text.strip()
 
-    # Return the cleaned response text
-    return response_text.strip()
+    if not enable_thinking:
+        return response_text.strip()
+
+    # Return empty string if model didn't finish generating the answer
+    return ""
 
 
-def compute_ttft_ratio(response: str, template_type: str = "default") -> float:
+def compute_ttft_ratio(response: str, template_type: str = "default", max_tokens: int = 4096) -> float:
     """
     Compute Time to First Token (TTFT) ratio.
 
-    TTFT measures how quickly the model gets to the answer within its response.
+    TTFT measures how quickly the model gets to the answer relative to the maximum context length.
     Lower values indicate the model gets to the answer faster.
+    
+    The ratio is computed as: tokens_to_answer / max_tokens
+    This gives a standardized measure across different response lengths.
 
     Args:
         response: Response string to analyze
         template_type: Template type used for generation
+        max_tokens: Maximum total tokens (default: 4096)
 
     Returns:
         TTFT ratio (value between 0 and 1)
@@ -181,9 +190,9 @@ def compute_ttft_ratio(response: str, template_type: str = "default") -> float:
 
     # Tokenize by splitting on whitespace (simple approximation)
     tokens = response.strip().split()
-    total_length = len(tokens)
+    response_tokens = len(tokens)
 
-    if total_length == 0:
+    if response_tokens == 0:
         return 1.0
 
     if template_type == "default":
@@ -197,8 +206,8 @@ def compute_ttft_ratio(response: str, template_type: str = "default") -> float:
         # Find the first token after </think>
         text_before_think = response[: think_tag_pos + len("</think>")]
         tokens_to_think = len(text_before_think.split())
-        # Normalize: tokens to think / total tokens
-        ttft_ratio = tokens_to_think / total_length if total_length > 0 else 1.0
+        # Normalize: tokens to think / max_tokens
+        ttft_ratio = tokens_to_think / max_tokens if max_tokens > 0 else 1.0
     else:
         # For other templates: look for <answer> tags
         answer_pattern = r"<answer>.*?</answer>"
@@ -216,32 +225,88 @@ def compute_ttft_ratio(response: str, template_type: str = "default") -> float:
         # Calculate tokens before first answer
         text_before_answer = response[:first_answer_pos]
         tokens_to_answer = len(text_before_answer.split())
-        # Normalize: tokens to answer / total tokens
-        ttft_ratio = tokens_to_answer / total_length if total_length > 0 else 1.0
+        # Normalize: tokens to answer / max_tokens
+        ttft_ratio = tokens_to_answer / max_tokens if max_tokens > 0 else 1.0
 
     # Ensure it's between 0 and 1
     return max(0.0, min(ttft_ratio, 1.0))
 
 
+def compute_tokens_to_first_answer(response: str, template_type: str = "default") -> int:
+    """
+    Compute the number of tokens to the first answer.
+
+    This function counts the actual number of tokens (not ratio) from the start
+    of the response to the first answer or thinking completion.
+
+    Args:
+        response: Response string to analyze
+        template_type: Template type used for generation
+
+    Returns:
+        Number of tokens to first answer (integer)
+    """
+    if not response or not response.strip():
+        return 0
+
+    # Tokenize by splitting on whitespace (simple approximation)
+    tokens = response.strip().split()
+    response_tokens = len(tokens)
+
+    if response_tokens == 0:
+        return 0
+
+    if template_type == "default":
+        # For default template: look for </think> tag
+        think_tag_pos = response.find("</think>")
+
+        if think_tag_pos == -1:
+            # </think> not found, return total response length
+            return response_tokens
+
+        # Find the first token after </think>
+        text_before_think = response[: think_tag_pos + len("</think>")]
+        tokens_to_think = len(text_before_think.split())
+        return tokens_to_think
+    else:
+        # For other templates: look for <answer> tags
+        answer_pattern = r"<answer>.*?</answer>"
+        answer_matches = re.findall(answer_pattern, response, re.DOTALL | re.IGNORECASE)
+
+        if not answer_matches:
+            # No answer tags found, return total response length
+            return response_tokens
+
+        # Find the first <answer> tag
+        first_answer_pos = response.find("<answer>")
+        if first_answer_pos == -1:
+            return response_tokens
+
+        # Calculate tokens before first answer
+        text_before_answer = response[:first_answer_pos]
+        tokens_to_answer = len(text_before_answer.split())
+        return tokens_to_answer
+
+
 def parse_interleaved_components(response: str) -> List[Dict[str, Any]]:
     """
     Parse interleaved think and answer components from a response string.
-
+    
     Args:
         response: Response string that may contain <think></think> and <answer></answer> tags
-
+        
     Returns:
         List of component dictionaries with 'type', 'index', and 'content' keys
     """
     import re
-
+    
     if not isinstance(response, str) or not response.strip():
         return []
-
+    
     # Find all think and answer tags with their positions
     think_pattern = r"<think>(.*?)</think>"
     answer_pattern = r"<answer>(.*?)</answer>"
-
+    
     # Find all matches with their start positions
     think_matches = [
         (m.start(), "think", m.group(1).strip(), i + 1)
@@ -255,14 +320,14 @@ def parse_interleaved_components(response: str) -> List[Dict[str, Any]]:
             re.finditer(answer_pattern, response, re.DOTALL | re.IGNORECASE)
         )
     ]
-
+    
     # If no <answer></answer> tags found, extract answer as everything after the last </think>
     if not answer_matches and think_matches:
         # Find the last </think> position
         last_think_end = (
             think_matches[-1][0] + len(think_matches[-1][2]) + 8
         )  # 8 = len("</think>")
-
+        
         # Extract everything after the last </think> as the answer
         answer_content = response[last_think_end:].strip()
         if answer_content:
@@ -270,11 +335,11 @@ def parse_interleaved_components(response: str) -> List[Dict[str, Any]]:
             answer_matches = [
                 (last_think_end, "answer", answer_content, len(think_matches) + 1)
             ]
-
+    
     # Combine and sort by position to maintain chronological order
     all_matches = think_matches + answer_matches
     all_matches.sort(key=lambda x: x[0])
-
+    
     # Create interleaved sections with additional whitespace cleaning
     interleaved_sections = []
     for _, section_type, content, index in all_matches:
@@ -287,18 +352,18 @@ def parse_interleaved_components(response: str) -> List[Dict[str, Any]]:
             cleaned_content = "\n".join(
                 line.strip() for line in cleaned_content.split("\n")
             )
-
+            
             interleaved_sections.append(
                 {"type": section_type, "index": index, "content": cleaned_content}
             )
-
+    
     return interleaved_sections
 
 
 def save_to_parquet(data: List[Dict], prefix: str, output_dir: str, filename: str):
     """
     Save data to parquet file.
-
+    
     Args:
         data: List of dictionaries to save
         prefix: Prefix for the filename
@@ -306,7 +371,7 @@ def save_to_parquet(data: List[Dict], prefix: str, output_dir: str, filename: st
         filename: Base filename
     """
     import pandas as pd
-
+    
     df = pd.DataFrame(data)
     output_path = Path(output_dir) / f"{prefix}_{filename}.parquet"
     df.to_parquet(output_path, index=False)
@@ -316,7 +381,7 @@ def save_to_parquet(data: List[Dict], prefix: str, output_dir: str, filename: st
 def save_jsonl(data: List[Dict], output_file: str):
     """
     Save data to JSONL file.
-
+    
     Args:
         data: List of dictionaries to save
         output_file: Output file path
@@ -331,7 +396,7 @@ class StandardizedRewardModel:
     """
     Standardized reward model for evaluation.
     """
-
+    
     def __init__(
         self,
         ground_truth: List[str],
@@ -343,7 +408,7 @@ class StandardizedRewardModel:
         self.style = style
         self.unit_tests = unit_tests
         self.libs = libs
-
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {

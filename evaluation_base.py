@@ -27,12 +27,29 @@ class EvaluationConfig:
     model_path: str = "Qwen/Qwen3-8B"
     output_dir: str = "logs/evaluation"
     batch_size: int = 50
-    max_problems: int = 100
+    max_problems: int = 500
     temperature: float = 0.2
     template_type: str = "default"
     rollout_name: str = "vllm"
-    response_length: Optional[int] = None
+    prompt_length: Optional[int] = 10000
+    response_length: Optional[int] = 4096
     no_thinking: bool = False
+
+    # rewind and repeat 
+    max_rewind_attempts: int = 2
+    plan_evaluation_threshold: float = 0.5
+    rewind_prompt_template: str = "default"
+    force_answer_completion: bool = True
+    additional_answer_tokens: int = 4096
+
+    
+    # for best of n
+    n_candidates: int = 10
+    use_random_selection: bool = False  # Use random selection instead of oracle for best-of-n
+    random_seed: int = 42  # Seed for reproducible random selection
+    use_similarity_filtering: bool = False
+    enable_iterative_reprompting: bool = False
+
     
     # Math evaluation specific parameters
     autorater_service_url: str = "http://10.128.0.30:81"
@@ -40,6 +57,12 @@ class EvaluationConfig:
     WORLD_SIZE: int = 1
     RANK: int = 0
     LOCAL_RANK: int = 0
+    
+    # BirdSQL evaluation specific parameters
+    db_root_path: str = "./data/minidev/MINIDEV/dev_databases/"
+    sql_timeout: float = 30.0
+    num_cpus: int = 1
+    enable_sql_execution: bool = True
 
 class BaseEvaluator(ABC):
     """
@@ -76,6 +99,7 @@ class BaseEvaluator(ABC):
         self.total_task_completions = 0
         self.all_responses = []
         self.total_problems = 0
+        self.total_tokens_generated = 0
         
     def setup_environment(self):
         """Check GPU availability and setup environment."""
@@ -118,18 +142,28 @@ class BaseEvaluator(ABC):
         self.rollout_config["rollout"]["template_type"] = self.cfg.template_type
         self.rollout_config["rollout"]["name"] = self.cfg.rollout_name
         self.rollout_config["rollout"]["enable_thinking"] = not self.cfg.no_thinking
-        
+        self.rollout_config["rollout"]["prompt_length"] = self.cfg.prompt_length
+        self.rollout_config["rollout"]["n_candidates"] = self.cfg.n_candidates
+
+        # Add best-of-n specific configuration
+        if self.cfg.rollout_name == "vllm_best_of_n":
+            self.rollout_config["rollout"]["use_random_selection"] = self.cfg.use_random_selection
+            self.rollout_config["rollout"]["random_seed"] = self.cfg.random_seed
+
         # Override response length if specified
         if self.cfg.response_length is not None:
             self.rollout_config["rollout"]["response_length"] = self.cfg.response_length
             print(f"Response length overridden to: {self.cfg.response_length} tokens")
         
-        if self.cfg.template_type == "plan_first":
-            self.rollout_config["rollout"]["name"] = "vllm_rewind_and_repeat"
-        
         print(f"Config: prompt_length={self.rollout_config['rollout']['prompt_length']}, response_length={self.rollout_config['rollout']['response_length']}")
         print(f"Generation: temperature={self.rollout_config['rollout']['temperature']}, batch_size={self.cfg.batch_size}")
         print(f"Template: {self.rollout_config['rollout']['template_type']}")
+        
+        # Print best-of-n specific configuration
+        if self.cfg.rollout_name == "vllm_best_of_n":
+            print(f"Best-of-N: n_candidates={self.cfg.n_candidates}, random_selection={self.cfg.use_random_selection}")
+            if self.cfg.use_random_selection:
+                print(f"Random selection seed: {self.cfg.random_seed}")
     
     def initialize_worker(self):
         """Initialize ActorRolloutRefWorker and model."""
@@ -179,10 +213,43 @@ class BaseEvaluator(ABC):
         torch.cuda.empty_cache()
         output = self.worker.generate_sequences(prompts_dataproto)
         
-        # Process results for this batch
+        # First pass: process all examples and collect extracted contents
+        batch_results = []
+        batch_extracted_contents = []
+        
         for i, example in enumerate(batch_examples):
             result = self._process_single_example(example, i, output, batch_idx)
+            batch_results.append(result)
+            batch_extracted_contents.append(result['generated_code'])
+        
+        # Second pass: evaluate all extracted contents in batch
+        batch_evaluations = self._evaluate_batch(batch_examples, batch_extracted_contents)
+        
+        # Third pass: populate results with batch evaluations
+        for i, (result, evaluation) in enumerate(zip(batch_results, batch_evaluations)):
+            # Update the evaluation field
+            result['evaluation'] = evaluation
+            
+            # Add task-specific fields that depend on evaluation
+            result.update(self._add_task_specific_fields(batch_examples[i], evaluation))
+            
+            # Add to all results
             self.all_results.append(result)
+    
+    @abstractmethod
+    def _evaluate_batch(self, examples: List[Dict], extracted_contents: List[str]) -> List[Dict[str, Any]]:
+        """
+        Evaluate a batch of extracted contents against ground truth.
+        Must be implemented by subclasses for efficient batch evaluation.
+        
+        Args:
+            examples: List of examples in the batch
+            extracted_contents: List of extracted contents to evaluate
+            
+        Returns:
+            List of evaluation results for each example
+        """
+        pass
     
     def _process_single_example(self, example: Dict, i: int, output, batch_idx: int) -> Dict:
         """
@@ -210,17 +277,14 @@ class BaseEvaluator(ABC):
         # Extract solution/code from response
         extracted_content = self._extract_content_from_response(response_text)
         
-        # Evaluate the extracted content
-        evaluation = self._evaluate_content(example, extracted_content)
-        
         # Parse interleaved components if using plan_first template
         interleaved_components = []
         if self.rollout_config["rollout"]["template_type"] == "plan_first":
             from helpers import parse_interleaved_components
             interleaved_components = parse_interleaved_components(response_text)
-            print(f"  Parsed {len(interleaved_components)} interleaved components")
-            for comp in interleaved_components:
-                print(f"    {comp['type'].upper()} {comp['index']}: {comp['content'][:100]}...")
+            # print(f"  Parsed {len(interleaved_components)} interleaved components")
+            # for comp in interleaved_components:
+            #     print(f"    {comp['type'].upper()} {comp['index']}: {comp['content'][:100]}...")
         
         # Calculate task completion rate
         task_completed = compute_completion_rate(
@@ -235,23 +299,45 @@ class BaseEvaluator(ABC):
         # Calculate number of tokens for metrics
         num_tokens = int(response_tokens.shape[0]) if hasattr(response_tokens, 'shape') else 0
         
+        # For rewind-and-repeat, get total tokens generated across all attempts
+        total_tokens_generated = num_tokens
+        if (self.rollout_config["rollout"]["name"] == "vllm_rewind_and_repeat" and 
+            hasattr(output, 'non_tensor_batch') and 
+            'generation_history' in output.non_tensor_batch):
+            
+            generation_history = output.non_tensor_batch['generation_history']
+            if i < len(generation_history):
+                gh = generation_history[i]
+                if 'total_tokens_generated' in gh:
+                    total_tokens_generated = gh['total_tokens_generated']
+                    # print(f"  Total tokens generated (including rewind attempts): {total_tokens_generated:,}")
+        
+        # For force answer rollout, get total tokens generated including forced completion
+        elif (self.rollout_config["rollout"]["name"] == "vllm_force_answer" and 
+              hasattr(output, 'non_tensor_batch') and 
+              'total_tokens_generated' in output.non_tensor_batch):
+            
+            total_tokens_list = output.non_tensor_batch['total_tokens_generated']
+            if i < len(total_tokens_list):
+                total_tokens_generated = total_tokens_list[i]
+                print(f"  Total tokens generated (including forced completion): {total_tokens_generated:,}")
+        
         # Calculate individual TTFT ratio for this problem
         ttft_ratio = compute_ttft_ratio(response_text, self.rollout_config["rollout"]["template_type"])
         
+        # Calculate tokens to first answer
+        from helpers import compute_tokens_to_first_answer
+        tokens_to_first_answer = compute_tokens_to_first_answer(response_text, self.rollout_config["rollout"]["template_type"])
+        
         # Track metrics
         self.total_problems += 1
+        self.total_tokens_generated += total_tokens_generated
         
-        # Create base result structure
+        # Create base result structure (evaluation will be populated later)
         result = self._create_base_result(
-            example, response_text, extracted_content, evaluation,
-            interleaved_components, task_completed, num_tokens, ttft_ratio
+            example, response_text, extracted_content, {},
+            interleaved_components, task_completed, num_tokens, ttft_ratio, total_tokens_generated, tokens_to_first_answer
         )
-        
-        # Add task-specific fields
-        result.update(self._add_task_specific_fields(example, evaluation))
-        
-        # Print progress
-        self._print_progress(batch_idx, i, evaluation)
         
         return result
     
@@ -262,23 +348,16 @@ class BaseEvaluator(ABC):
         Must be implemented by subclasses.
         """
         pass
-    
-    @abstractmethod
-    def _evaluate_content(self, example: Dict, extracted_content: str) -> Dict[str, Any]:
-        """
-        Evaluate the extracted content against ground truth.
-        Must be implemented by subclasses.
-        """
-        pass
+
     
     def _create_base_result(self, example: Dict, response_text: str, extracted_content: str,
                            evaluation: Dict, interleaved_components: List[Dict],
-                           task_completed: bool, num_tokens: int, ttft_ratio: float) -> Dict:
+                           task_completed: bool, num_tokens: int, ttft_ratio: float, total_tokens_generated: int = None, tokens_to_first_answer: int = None) -> Dict:
         """Create the base result structure common to all tasks."""
         return {
             'problem_id': example['id'],
             'prompt': example.get('prompt', example.get('problem', '')),
-            'generated_code': extracted_content,  # Reuse field name for compatibility
+            'generated_code': extracted_content,
             'full_response': response_text,
             'evaluation': evaluation,
             'interleaved_components': interleaved_components,
@@ -286,7 +365,9 @@ class BaseEvaluator(ABC):
             # Metrics
             'task_completed': task_completed,
             'num_tokens': num_tokens,
+            'total_tokens_generated': total_tokens_generated if total_tokens_generated is not None else num_tokens,
             'ttft_ratio': ttft_ratio,
+            'tokens_to_first_answer': tokens_to_first_answer if tokens_to_first_answer is not None else 0,
         }
     
     @abstractmethod
@@ -297,13 +378,6 @@ class BaseEvaluator(ABC):
         """
         pass
     
-    @abstractmethod
-    def _print_progress(self, batch_idx: int, i: int, evaluation: Dict):
-        """
-        Print progress for the current example.
-        Must be implemented by subclasses.
-        """
-        pass
     
     def run_evaluation(self):
         """Run the complete evaluation process."""
@@ -344,15 +418,24 @@ class BaseEvaluator(ABC):
     
     def _save_results(self, output_dir: Path):
         """Save results to files."""
-        # Generate filename
+        # Generate directory structure and filename
         thinking_tag = "thinking" if self.rollout_config["rollout"]["enable_thinking"] else "no_thinking"
-        filename = f"{self._get_dataset_name()}_{self.cfg.template_type}_{self.rollout_config['rollout']['name']}_{thinking_tag}"
+        
+        # Create directory structure: dataset_name/template_type_{thinking}/
+        dataset_dir = output_dir / self._get_dataset_name()
+        template_dir = dataset_dir / f"{self.cfg.template_type}_{thinking_tag}"
+        
+        # Create directories if they don't exist
+        template_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename: rollout_name.json
+        filename = self.rollout_config['rollout']['name']
         
         if self.cfg.template_type == "plan_first":
             filename += f"_{self.rollout_config['rollout']['n_candidates']}"
         
         # Save as JSON
-        json_file = output_dir / f"{filename}.json"
+        json_file = template_dir / f"{filename}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(self.all_results, f, ensure_ascii=False, indent=2, default=str)
         
@@ -366,7 +449,15 @@ class BaseEvaluator(ABC):
     @abstractmethod
     def _generate_html_visualization(self, output_dir: Path):
         """Generate HTML visualization - must be implemented by subclasses."""
-        pass
+        # Create the same directory structure for HTML files
+        thinking_tag = "thinking" if self.rollout_config["rollout"]["enable_thinking"] else "no_thinking"
+        dataset_dir = output_dir / self._get_dataset_name()
+        template_dir = dataset_dir / f"{self.cfg.template_type}_{thinking_tag}"
+        
+        # Create directories if they don't exist
+        template_dir.mkdir(parents=True, exist_ok=True)
+        
+        return template_dir
     
     def _print_final_summary(self):
         """Print the final evaluation summary."""
@@ -375,6 +466,19 @@ class BaseEvaluator(ABC):
         print(f"\n=== Final Results ===")
         print(f"Total Problems: {len(self.all_results)}")
         print(f"Task Completion Rate: {task_completion_rate:.1f}% ({self.total_task_completions}/{len(self.examples)})")
+        print(f"Total Tokens Generated: {self.total_tokens_generated:,}")
+        print(f"Average Tokens per Problem: {self.total_tokens_generated / len(self.all_results):.1f}" if self.all_results else "N/A")
+        
+        # Calculate and display tokens to first answer statistics
+        if self.all_results:
+            tokens_to_first_answer_values = [r.get('tokens_to_first_answer', 0) for r in self.all_results if r.get('tokens_to_first_answer') is not None]
+            if tokens_to_first_answer_values:
+                avg_tokens_to_answer = sum(tokens_to_first_answer_values) / len(tokens_to_first_answer_values)
+                min_tokens_to_answer = min(tokens_to_first_answer_values)
+                max_tokens_to_answer = max(tokens_to_first_answer_values)
+                print(f"Average Tokens to First Answer: {avg_tokens_to_answer:.1f}")
+                print(f"Min Tokens to First Answer: {min_tokens_to_answer}")
+                print(f"Max Tokens to First Answer: {max_tokens_to_answer}")
         
         # Add task-specific metrics
         self._print_task_specific_metrics()

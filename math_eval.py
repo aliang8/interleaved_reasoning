@@ -51,76 +51,97 @@ class MathEvaluator(BaseEvaluator):
     
     def _extract_content_from_response(self, response_text: str) -> str:
         """Extract solution from response text."""
-        return extract_solution_from_response(response_text, self.rollout_config["rollout"]["template_type"])
+        return extract_solution_from_response(response_text, self.rollout_config["rollout"]["template_type"], self.rollout_config["rollout"]["enable_thinking"])
     
-    def _evaluate_content(self, example: Dict, extracted_content: str) -> Dict[str, Any]:
-        """Evaluate solution against ground truth using autorater."""
-        results = {
-            'problem': example['problem'],
-            'generated_solution': extracted_content,
-            'ground_truth_answer': example['answer'],
-            'is_correct': False,
-            'confidence': 0.0,
-            'explanation': '',
-            'evaluation_error': None
-        }
+    def _evaluate_batch(self, examples: List[Dict], extracted_contents: List[str]) -> List[Dict[str, Any]]:
+        """Evaluate a batch of solutions against ground truth using autorater."""
+        batch_evaluations = []
         
-        if not extracted_content.strip():
-            results['evaluation_error'] = 'No solution generated'
-            return results
+        # Prepare autorater payload for batch evaluation
+        prompts = []
+        responses = []
+        gt_answers = []
         
-        # Prepare autorater payload for answer correctness evaluation
+        for example, extracted_content in zip(examples, extracted_contents):
+            prompts.append(example['problem'])
+            responses.append(extracted_content)
+            gt_answers.append(example['answer'])
+        
+        # Call autorater service once for the entire batch
         autorater_payload = {
-            "prompts": [example['problem']],
-            "responses": [extracted_content],
-            "gt_answers": [example['answer']],
-            "template_types": ["autorater"],  # Use standard autorater template for math problems
+            "prompts": prompts,
+            "responses": responses,
+            "gt_answers": gt_answers,
+            "template_types": ["autorater"] * len(prompts),  # Use standard autorater template for math problems
         }
 
+        print(f"  Evaluating {len(prompts)} solutions with autorater...")
+        
         # Call autorater service
         autorater_decisions, autorater_explanations, autorater_raw_responses = call_autorater_service(
-            self.cfg.autorater_service_url, autorater_payload, batch_size=1
+            self.cfg.autorater_service_url, autorater_payload, batch_size=len(prompts)
         )
         
-        # Parse the response to get the correctness decision
-        if autorater_decisions and len(autorater_decisions) > 0:
-            decision = autorater_decisions[0]
+        # Process results for each example
+        for i, (example, extracted_content) in enumerate(zip(examples, extracted_contents)):
+            results = {
+                'problem': example['problem'],
+                'generated_solution': extracted_content,
+                'ground_truth_answer': example['answer'],
+                'is_correct': False,
+                'confidence': 0.0,
+                'explanation': '',
+                'evaluation_error': None
+            }
             
-            results['is_correct'] = float(decision) == 1.0
+            if not extracted_content.strip():
+                results['evaluation_error'] = 'No solution generated'
+                batch_evaluations.append(results)
+                continue
             
-            # Get explanation if available
-            if autorater_explanations and len(autorater_explanations) > 0:
-                results['explanation'] = autorater_explanations[0]
+            # Parse the response to get the correctness decision
+            if autorater_decisions and i < len(autorater_decisions):
+                decision = autorater_decisions[i]
+                
+                results['is_correct'] = float(decision) == 1.0
+                
+                # Get explanation if available
+                if autorater_explanations and i < len(autorater_explanations):
+                    results['explanation'] = autorater_explanations[i]
+            else:
+                results['evaluation_error'] = 'No decision from autorater'
             
-            print(f"    Autorater decision: {decision} (correct: {results['is_correct']})")
-        else:
-            results['evaluation_error'] = 'No decision from autorater'
-            print("    Warning: No decision from autorater, defaulting to incorrect")
+            batch_evaluations.append(results)
        
-        return results
+        return batch_evaluations
     
     def _create_base_result(self, example: Dict, response_text: str, extracted_content: str,
                            evaluation: Dict, interleaved_components: List[Dict],
-                           task_completed: bool, num_tokens: int, ttft_ratio: float) -> Dict:
-        """Create the base result structure for math problems."""
+                           task_completed: bool, num_tokens: int, ttft_ratio: float,
+                           total_tokens_generated: int = None, tokens_to_first_answer: int = None) -> Dict:
+        """Create the base result structure for math problems.
+        If evaluation is not yet available, return the base result unchanged.
+        """
         base_result = super()._create_base_result(
             example, response_text, extracted_content, evaluation,
-            interleaved_components, task_completed, num_tokens, ttft_ratio
+            interleaved_components, task_completed, num_tokens, ttft_ratio,
+            total_tokens_generated, tokens_to_first_answer
         )
         
-        # Add math-specific evaluation structure
-        base_result['evaluation'] = {
-            'tests_passed': 1 if evaluation['is_correct'] else 0,
-            'tests_failed': 0 if evaluation['is_correct'] else 1,
-            'total_tests': 1,
-            'test_results': [{
-                'test': f"Solution correctness: {evaluation['is_correct']}",
-                'passed': evaluation['is_correct'],
-                'error': None if evaluation['is_correct'] else evaluation['explanation']
-            }],
-            'execution_error': evaluation.get('evaluation_error'),
-            'test_imports': []
-        }
+        # Only enrich the evaluation structure when batch evaluation has populated it
+        if isinstance(evaluation, dict) and 'is_correct' in evaluation:
+            base_result['evaluation'] = {
+                'tests_passed': 1 if evaluation['is_correct'] else 0,
+                'tests_failed': 0 if evaluation['is_correct'] else 1,
+                'total_tests': 1,
+                'test_results': [{
+                    'test': f"Solution correctness: {evaluation['is_correct']}",
+                    'passed': evaluation['is_correct'],
+                    'error': None if evaluation['is_correct'] else evaluation.get('explanation')
+                }],
+                'execution_error': evaluation.get('evaluation_error'),
+                'test_imports': []
+            }
         
         return base_result
     
@@ -142,24 +163,24 @@ class MathEvaluator(BaseEvaluator):
             'autorater_explanation': evaluation['explanation']
         }
     
-    def _print_progress(self, batch_idx: int, i: int, evaluation: Dict):
-        """Print progress for the current math problem."""
-        status = "✓ CORRECT" if evaluation['is_correct'] else "✗ INCORRECT"
-        print(f"  Problem {batch_idx * self.cfg.batch_size + i + 1}: {status}")
-    
     def _get_dataset_name(self) -> str:
         """Get the name of the dataset for filename generation."""
         return self.cfg.dataset
     
     def _generate_html_visualization(self, output_dir: Path):
         """Generate HTML visualization for math problems."""
-        thinking_tag = "thinking" if self.rollout_config["rollout"]["enable_thinking"] else "no_thinking"
-        filename = f"{self.cfg.dataset}_{self.cfg.template_type}_{self.rollout_config['rollout']['name']}_{thinking_tag}"
+        # Get the template directory from base class
+        template_dir = super()._generate_html_visualization(output_dir)
+        
+        # Generate filename: rollout_name_response_length.html
+        filename = self.rollout_config['rollout']['name']
         
         if self.cfg.template_type == "plan_first":
             filename += f"_{self.rollout_config['rollout']['n_candidates']}"
         
-        html_file = output_dir / f"{filename}.html"
+        filename += f"_{self.cfg.response_length}"
+        
+        html_file = template_dir / f"{filename}.html"
         create_math500_html_visualization(self.all_results, html_file)
         print(f"🎨 HTML visualization saved to {html_file}")
     

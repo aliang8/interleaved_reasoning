@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Standalone script to create HTML visualizations from saved MBPP evaluation results.
-Usage: python create_mbpp_html.py --results_path path/to/results.json --output_file output.html
+Standalone script to create HTML visualizations from saved BigCodeBench evaluation results.
+Usage: python create_bigcodebench_html.py --results_path path/to/results.json --output_file output.html
 """
 
 import json
@@ -26,9 +26,9 @@ def extract_thinking_from_full_response(full_response: str) -> str:
     return full_response
 
 
-def create_mbpp_html_visualization(results: List[Dict], output_file: str):
+def create_bigcodebench_html_visualization(results: List[Dict], output_file: str):
     """
-    Create HTML visualization for MBPP evaluation results.
+    Create HTML visualization for BigCodeBench evaluation results.
 
     Args:
         results: List of evaluation results
@@ -40,7 +40,7 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MBPP Code Generation Evaluation Results</title>
+    <title>BigCodeBench Code Generation Evaluation Results</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -98,28 +98,6 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
         }
         .prompt-text::before {
             content: "📝";
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            font-size: 18px;
-            opacity: 0.7;
-        }
-        .explicit-task-section {
-            margin: 15px 0;
-        }
-        .explicit-task-text {
-            background: #e8f4f8;
-            padding: 15px;
-            border-radius: 6px;
-            border-left: 4px solid #17a2b8;
-            font-family: monospace;
-            white-space: pre-wrap;
-            max-height: 200px;
-            overflow-y: auto;
-            position: relative;
-        }
-        .explicit-task-text::before {
-            content: "🎯";
             position: absolute;
             top: 10px;
             right: 15px;
@@ -438,11 +416,52 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
             max-height: 400px;
             overflow-y: auto;
         }
+        .sandbox-results {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .sandbox-result {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .sandbox-output {
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 12px;
+            line-height: 1.3;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 3px;
+        }
+        .libraries-section {
+            background: #e8f4f8;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .library-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
-    <h1>🧪 MBPP Code Generation Evaluation Results</h1>
-    <p>This visualization shows the code generation results for each MBPP problem, including generated code and test case results.</p>
+    <h1>🧪 BigCodeBench Code Generation Evaluation Results</h1>
+    <p>This visualization shows the code generation results for each BigCodeBench problem, including generated code, test cases, and sandbox execution results.</p>
     
 """
 
@@ -595,6 +614,9 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
         interleaved_components = result.get("interleaved_components", [])
         full_response = result.get("full_response", "")  # Full response including thinking
         template_type = result.get("extra_info", {}).get("template_type", "default")
+        test_cases = result.get("test_cases", "") # Changed from list to string
+        sandbox_results = result.get("sandbox_results")
+        libs = result.get("libs", "") # Changed from list to string
 
         html_content += f"""
     <div class="problem-container">
@@ -625,15 +647,33 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
             </div>
             
             <div class="prompt-text">{prompt}</div>
-            
-            <div class="explicit-task-section">
-                <h4>🎯 Original Intent / Explicit Task</h4>
-                <div class="explicit-task-text">{result.get("original_intent", result.get("explicit_task", "No explicit task provided"))}</div>
+"""
+
+        # Show libraries if available
+        if libs and libs.strip():
+            html_content += f"""
+            <div class="libraries-section">
+                <h4>📦 Required Libraries</h4>
+"""
+            # Split by lines and filter out empty lines
+            lib_lines = [lib.strip() for lib in libs.splitlines() if lib.strip()]
+            if lib_lines:
+                for lib in lib_lines:
+                    html_content += f"""
+                <div class="library-item">{lib}</div>
+"""
+            else:
+                # If no valid lines, show the original string
+                html_content += f"""
+                <div class="library-item">{libs}</div>
+"""
+            html_content += """
             </div>
 """
 
-        # Show interleaved components if available (plan_first template)
-        if interleaved_components and len(interleaved_components) > 0 and template_type == "plan_first":
+        # Show interleaved components if available
+        if interleaved_components and len(interleaved_components) > 0:
+            print(f"  Found {len(interleaved_components)} interleaved components for problem {i + 1}")
             html_content += f"""
             <div class="interleaved-flow">
                 <h4>🔄 Generation Flow ({len(interleaved_components)} components)</h4>
@@ -688,68 +728,69 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
                 <p><strong>Tests Passed:</strong> {evaluation["tests_passed"]}/{evaluation["total_tests"]} ({evaluation["tests_passed"] / evaluation["total_tests"] * 100:.1f}%)</p>
 """
 
-        # Show test imports if available
-        if evaluation.get("test_imports") and len(evaluation["test_imports"]) > 0:
+        # Show test cases
+        if test_cases:
             html_content += f"""
-                <div class="test-imports">
-                    <h4>📦 Test Imports</h4>
-                    <div class="import-list">
+                <h4>🧪 Test Cases</h4>
+                <div class="test-item test-passed">
+                    <div class="test-header">
+                        <strong>Test Case</strong>
+                    </div>
+                    <div class="test-assertion">
+                        <code>{test_cases}</code>
+                    </div>
+                </div>
 """
-            for import_stmt in evaluation["test_imports"]:
-                html_content += f"""
-                    <div class="import-item">{import_stmt}</div>
+
+        # Show sandbox results if available
+        if sandbox_results:
+            html_content += f"""
+                <h4>🔬 Sandbox Execution Results</h4>
+                <div class="sandbox-results">
+"""
+            for sandbox_idx, sandbox_result in enumerate(sandbox_results):
+                if sandbox_result:
+                    stdout = sandbox_result.get("stdout", "")
+                    stderr = sandbox_result.get("stderr", "")
+                    html_content += f"""
+                    <div class="sandbox-result">
+                        <h5>Test {sandbox_idx + 1} Execution</h5>
+"""
+                    if stdout:
+                        html_content += f"""
+                        <div class="sandbox-output">
+                            <strong>stdout:</strong>
+{stdout}
+                        </div>
+"""
+                    if stderr:
+                        html_content += f"""
+                        <div class="sandbox-output">
+                            <strong>stderr:</strong>
+{stderr}
+                        </div>
+"""
+                    html_content += """
+                    </div>
+"""
+                else:
+                    html_content += f"""
+                    <div class="sandbox-result">
+                        <h5>Test {sandbox_idx + 1} Execution</h5>
+                        <div class="sandbox-output">
+                            <strong>No execution result available</strong>
+                        </div>
+                    </div>
 """
             html_content += """
-                    </div>
                 </div>
 """
 
         # Show execution error if any
-        if evaluation["execution_error"]:
+        if evaluation.get("execution_error"):
             html_content += f"""
                 <div class="error-message">
                     <strong>Execution Error:</strong> {evaluation["execution_error"]}
-                </div>
-"""
-
-        # Show individual test results with more detail
-        html_content += f"""
-                <h4>🧪 Individual Test Cases</h4>
-"""
-
-        if evaluation["test_results"]:
-            for test_idx, test_result in enumerate(evaluation["test_results"]):
-                css_class = "test-passed" if test_result["passed"] else "test-failed"
-                status = "✓ PASS" if test_result["passed"] else "✗ FAIL"
-                test_number = test_idx + 1
-
-                html_content += f"""
-                <div class="test-item {css_class}">
-                    <div class="test-header">
-                        <strong>Test {test_number}: {status}</strong>
-                    </div>
-                    <div class="test-assertion">
-                        <code>{test_result["test"]}</code>
-                    </div>
-"""
-
-                if not test_result["passed"] and test_result["error"]:
-                    html_content += f"""
-                    <div class="test-error">
-                        <strong>Error:</strong> {test_result["error"]}
-                    </div>
-"""
-
-                html_content += "</div>"
-        else:
-            html_content += """
-                <div class="test-item test-failed">
-                    <div class="test-header">
-                        <strong>⚠️ No Test Results Found</strong>
-                    </div>
-                    <div class="test-assertion">
-                        <code>No test results available in evaluation</code>
-                    </div>
                 </div>
 """
 
@@ -843,7 +884,7 @@ def create_mbpp_html_visualization(results: List[Dict], output_file: str):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"Generated MBPP HTML visualization with {len(results)} problems")
+    print(f"Generated BigCodeBench HTML visualization with {len(results)} problems")
 
 
 def load_results_from_file(file_path: str) -> List[Dict]:
@@ -884,7 +925,7 @@ def load_results_from_file(file_path: str) -> List[Dict]:
 def main():
     """Main function to create HTML visualization from saved results."""
     parser = argparse.ArgumentParser(
-        description="Create HTML visualization from MBPP evaluation results"
+        description="Create HTML visualization from BigCodeBench evaluation results"
     )
     parser.add_argument(
         "--results_path",
@@ -895,13 +936,13 @@ def main():
     parser.add_argument(
         "--output_file",
         type=str,
-        default="mbpp_visualization.html",
+        default="bigcodebench_visualization.html",
         help="Output HTML file path",
     )
 
     args = parser.parse_args()
 
-    print("=== MBPP HTML Visualization Generator ===\n")
+    print("=== BigCodeBench HTML Visualization Generator ===\n")
     print(f"Results file: {args.results_path}")
     print(f"Output file: {args.output_file}")
 
@@ -914,7 +955,7 @@ def main():
             return False
 
         # Generate HTML visualization
-        create_mbpp_html_visualization(results, args.output_file)
+        create_bigcodebench_html_visualization(results, args.output_file)
 
         print(f"\n✅ HTML visualization created successfully!")
         print(f"📁 Output file: {args.output_file}")
@@ -930,4 +971,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main() 

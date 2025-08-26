@@ -22,3 +22,5 @@ logs/*
 data/*
 *.jsonl 
 *.parquet
+*.ipynb
+test_*

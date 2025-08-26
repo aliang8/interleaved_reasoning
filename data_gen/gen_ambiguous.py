@@ -32,7 +32,6 @@ Format your response as:
 Ambiguous prompt: <your ambiguous version>  
 True intent prompt 1: <your clarified golden version>  
 True intent prompt 2: <your clarified golden version>  
-True intent prompt 3: <your clarified golden version>  
 
 Make sure the true intent versions are different from each other. 
 The true intent versions do not need to do the same thing as the original prompt, but it should be
@@ -47,7 +46,6 @@ Input prompt: Write a function that takes a list of strings and sorts them based
 Ambiguous prompt: Write a function that processes lists. 
 True intent prompt 1: Write a function that takes a list of strings and sorts them based on the length of the string.
 True intent prompt 2: Write a function that takes a list of strings and sorts them in descending order.
-True intent prompt 3: Write a function that takes a list of strings and sorts them alphabetically.
 
 Original prompt: {original_task}
 
@@ -78,7 +76,7 @@ Please proceed with the solution: """
 
 # Prompt for generating unit tests
 TESTS_PROMPT = """You are given a coding task prompt and a function definition.
-Your job is to generate a list of assert statements that verify the function works correctly.
+Your job is to generate a list of three assert statements that verify the function works correctly.
 
 Function:
 {function_code}
@@ -185,7 +183,7 @@ class AmbiguityGenerator:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=0.7,
+                temperature=0.6,
                 top_p=0.9,
                 do_sample=True,
                 pad_token_id=self.tokenizer.eos_token_id,
@@ -542,8 +540,6 @@ def generate_ambiguous_dataset(
     max_new_tokens: int = 512,
     temperature: float = 0.7,
     num_return_sequences: int = 3,
-    interactive: bool = False,
-    auto_confirm: bool = False,
     max_solution_retries: int = 3
 ) -> List[Dict[str, Any]]:
     """Generate subtly modified, more ambiguous MBPP task descriptions."""
@@ -571,11 +567,11 @@ def generate_ambiguous_dataset(
             )
 
         if ambiguity_results and len(ambiguity_results) > 0:
-                # Apply similarity filtering to ensure diversity
+            # Apply similarity filtering to ensure diversity
             filtered_ambiguity_results, kept_indices = generator.filter_similar_ambiguity_sets(ambiguity_results, threshold=0.98)
             
             print(f"\n    📝 Generated {len(ambiguity_results)} ambiguity sets, kept {len(filtered_ambiguity_results)} after similarity filtering:")
-            print(f"      Original: {original_task[:80]}...")
+            print(f"      Original: {original_task}...")
             
             # Process each filtered ambiguity result
             for result_idx, ambiguity_result in enumerate(filtered_ambiguity_results):
@@ -583,139 +579,110 @@ def generate_ambiguous_dataset(
                 true_intent_prompts = ambiguity_result['true_intent_prompts']
                 
                 print(f"\n    🔍 Processing Ambiguity Set {result_idx + 1}:")
-                print(f"      Ambiguous: {ambiguous_prompt[:80]}...")
+                print(f"      Ambiguous: {ambiguous_prompt}...")
                 print(f"      True Intents: {len(true_intent_prompts)} versions")
                 
-                # Interactive confirmation for each ambiguity set
-                confirmed_ambiguity = False
-                    if auto_confirm:
-                    confirmed_ambiguity = True
-                    print(f"    ✅ Auto-confirmed Ambiguity Set {result_idx + 1}")
-                    elif interactive:
-                        while True:
-                        response = input(f"\n    ✅ Add this ambiguity set to dataset? (y/n/s=skip all remaining for this task): ").strip().lower()
-                            if response in ['y', 'yes']:
-                            confirmed_ambiguity = True
-                            print(f"    ✅ Added Ambiguity Set {result_idx + 1}")
-                                break
-                            elif response in ['n', 'no']:
-                            print(f"    ❌ Skipped Ambiguity Set {result_idx + 1}")
-                                break
-                            elif response in ['s', 'skip']:
-                            print(f"    ⏭️  Skipping all remaining ambiguity sets for this task")
-                                break
-                            else:
-                                print(f"    ❓ Please enter 'y', 'n', or 's'")
+                # Create paired entries: ambiguous prompt paired with each true intent
+                for intent_idx, true_intent_prompt in enumerate(true_intent_prompts):
+                    print(f"      Generating solution and tests for intent {intent_idx + 1}...")
+                    
+                    # Generate canonical solution and unit tests for this true intent with retry logic
+                    canonical_solution = ''
+                    unit_tests = ''
+                    
+                    for retry in range(max_solution_retries):
+                        with timer(f"Solution generation for intent {intent_idx + 1} (attempt {retry + 1})", verbose=False):
+                            solution_test_result = generator.generate_solution_and_tests(
+                                true_intent_prompt,
+                                max_new_tokens=1024,
+                                temperature=0.3
+                            )
                         
-                        if response in ['s', 'skip']:
+                        canonical_solution = solution_test_result.get('canonical_solution', '')
+                        unit_tests = solution_test_result.get('unit_tests', '')
+                        
+                        # Validate that we got a proper solution and tests
+                        has_function = 'def task_func' in canonical_solution
+                        has_asserts = unit_tests and all('assert' in test for test in unit_tests)
+                        
+                        if canonical_solution and unit_tests and has_function and has_asserts:
+                            # Count clean assert statements (unit_tests is now a list)
+                            test_count = len(unit_tests)
+                            print(f"        ✅ Generated solution and {test_count} test cases (attempt {retry + 1})")
                             break
-                    else:
-                    # Default: confirm all ambiguity sets without prompting
-                    confirmed_ambiguity = True
-                    print(f"    ✅ Added Ambiguity Set {result_idx + 1} (default)")
-                
-                if confirmed_ambiguity:
-                    # Create paired entries: ambiguous prompt paired with each true intent
-                    for intent_idx, true_intent_prompt in enumerate(true_intent_prompts):
-                        print(f"      Generating solution and tests for intent {intent_idx + 1}...")
-                        
-                        # Generate canonical solution and unit tests for this true intent with retry logic
-                        canonical_solution = ''
-                        unit_tests = ''
-                        
-                        for retry in range(max_solution_retries):
-                            with timer(f"Solution generation for intent {intent_idx + 1} (attempt {retry + 1})", verbose=False):
+                        else:
+                            missing = []
+                            if not canonical_solution:
+                                missing.append("solution")
+                            if not unit_tests:
+                                missing.append("tests")
+                            if not has_function:
+                                missing.append("function definition")
+                            if not has_asserts:
+                                missing.append("assert statements")
+                            print(f"        ⚠️  Attempt {retry + 1} failed: missing {', '.join(missing)}")
+                            if retry < max_solution_retries - 1:
+                                print(f"        🔄 Retrying...")
+                                # Increase temperature and add small delay for retries
+                                import time
+                                time.sleep(0.5)  # Small delay between retries
+                                
+                                # Progressive temperature increase: 0.3 -> 0.5 -> 0.7
+                                retry_temperature = 0.3 + (retry + 1) * 0.2
                                 solution_test_result = generator.generate_solution_and_tests(
                                     true_intent_prompt,
                                     max_new_tokens=1024,
-                                    temperature=0.3
+                                    temperature=retry_temperature
                                 )
-                            
-                            canonical_solution = solution_test_result.get('canonical_solution', '')
-                            unit_tests = solution_test_result.get('unit_tests', '')
-                            
-                            # Validate that we got a proper solution and tests
-                            has_function = 'def task_func' in canonical_solution
-                            has_asserts = unit_tests and all('assert' in test for test in unit_tests)
-                            
-                            if canonical_solution and unit_tests and has_function and has_asserts:
-                                # Count clean assert statements (unit_tests is now a list)
-                                test_count = len(unit_tests)
-                                print(f"        ✅ Generated solution and {test_count} test cases (attempt {retry + 1})")
-                                break
-                            else:
-                                missing = []
-                                if not canonical_solution:
-                                    missing.append("solution")
-                                if not unit_tests:
-                                    missing.append("tests")
-                                if not has_function:
-                                    missing.append("function definition")
-                                if not has_asserts:
-                                    missing.append("assert statements")
-                                print(f"        ⚠️  Attempt {retry + 1} failed: missing {', '.join(missing)}")
-                                if retry < max_solution_retries - 1:
-                                    print(f"        🔄 Retrying...")
-                                    # Increase temperature and add small delay for retries
-                                    import time
-                                    time.sleep(0.5)  # Small delay between retries
-                                    
-                                    # Progressive temperature increase: 0.3 -> 0.5 -> 0.7
-                                    retry_temperature = 0.3 + (retry + 1) * 0.2
-                                    solution_test_result = generator.generate_solution_and_tests(
-                                        true_intent_prompt,
-                                        max_new_tokens=1024,
-                                        temperature=retry_temperature
-                                                                          )
-                          
-                          # If all retries failed, use original solution and tests
-                        if not canonical_solution or not unit_tests:
-                            print(f"        ❌ All {max_solution_retries} attempts failed, using original solution and tests")
-                            canonical_solution = problem["code"]
-                            # Convert original test_list to list format if it's not already
-                            if isinstance(problem["test_list"], str):
-                                unit_tests = [line.strip() for line in problem["test_list"].split('\n') if line.strip() and 'assert' in line.strip()]
-                            else:
-                                unit_tests = problem["test_list"]
-                        
-                        # Create standardized reward model with generated solution and tests
-                        # Convert unit_tests list to string format for StandardizedRewardModel
-                        unit_tests_str = '\n'.join(unit_tests) if isinstance(unit_tests, list) else str(unit_tests)
-                        
-                reward_model = StandardizedRewardModel(
-                            ground_truth=[canonical_solution],
-                    style="code",
-                            unit_tests=[unit_tests_str],
-                    libs=[],
-                )
+                    
+                    # If all retries failed, use original solution and tests
+                    if not canonical_solution or not unit_tests:
+                        print(f"        ❌ All {max_solution_retries} attempts failed, using original solution and tests")
+                        canonical_solution = problem["code"]
+                        # Convert original test_list to list format if it's not already
+                        if isinstance(problem["test_list"], str):
+                            unit_tests = [line.strip() for line in problem["test_list"].split('\n') if line.strip() and 'assert' in line.strip()]
+                        else:
+                            unit_tests = problem["test_list"]
+                    
+                    # Create standardized reward model with generated solution and tests
+                    # Convert unit_tests list to string format for StandardizedRewardModel
+                    unit_tests_str = '\n'.join(unit_tests) if isinstance(unit_tests, list) else str(unit_tests)
+                    
+                    reward_model = StandardizedRewardModel(
+                        ground_truth=[canonical_solution],
+                        style="code",
+                        unit_tests=[unit_tests_str],
+                        libs=[],
+                    )
 
-                        # Entry with ambiguous prompt as question and true intent as explicit task
-                        ambiguous_entry = {
-                            "data_source": f"mbpp_ambiguous_{i}_set_{result_idx}_intent_{intent_idx}",
-                            "prompt": ambiguous_prompt,
-                            "answer": canonical_solution,  # Use generated canonical solution
-                    "reward_model": reward_model.to_dict(),
-                    "system_instruction_type": "default",
-                    "extra_info": {
-                        "split": "test",
+                    # Entry with ambiguous prompt as question and true intent as explicit task
+                    ambiguous_entry = {
+                        "data_source": f"mbpp_ambiguous_{i}_set_{result_idx}_intent_{intent_idx}",
+                        "prompt": ambiguous_prompt,
+                        "answer": canonical_solution,  # Use generated canonical solution
+                        "reward_model": reward_model.to_dict(),
+                        "system_instruction_type": "default",
+                        "extra_info": {
+                            "split": "test",
                             "index": i,
-                                "ambiguity_set_index": result_idx,
-                                "intent_index": intent_idx,
+                            "ambiguity_set_index": result_idx,
+                            "intent_index": intent_idx,
                             "original_task": original_task,
                             "original_task_id": problem.get("task_id", "Unknown"),
-                                "question": ambiguous_prompt,  # Store the ambiguous prompt as the question
-                                "explicit_task": true_intent_prompt,  # Store the true intent as explicit task
-                                "answer": [canonical_solution],
-                                "ambiguity_type": "subtle_ambiguity",
-                                "true_intent_prompt": true_intent_prompt,
-                                "generated_solution": canonical_solution,
-                                "generated_tests": unit_tests,
-                            },
-                        }
+                            "question": ambiguous_prompt,  # Store the ambiguous prompt as the question
+                            "explicit_task": true_intent_prompt,  # Store the true intent as explicit task
+                            "answer": [canonical_solution],
+                            "ambiguity_type": "subtle_ambiguity",
+                            "true_intent_prompt": true_intent_prompt,
+                            "generated_solution": canonical_solution,
+                            "generated_tests": unit_tests,
+                        },
+                    }
 
-                        entries.append(ambiguous_entry)
-                    
-                    print(f"    ✅ Successfully added {len(true_intent_prompts)} paired entries for Ambiguity Set {result_idx + 1}")
+                    entries.append(ambiguous_entry)
+                
+                print(f"    ✅ Successfully added {len(true_intent_prompts)} paired entries for Ambiguity Set {result_idx + 1}")
             
             print(f"    ✅ Total entries added for this problem: {len([e for e in entries if e['extra_info']['index'] == i])}")
         else:
@@ -766,12 +733,6 @@ def main():
         "--disable_similarity_filtering", action="store_true", help="Disable similarity filtering"
     )
     parser.add_argument(
-        "--interactive", action="store_true", help="Enable interactive confirmation for each generated version"
-    )
-    parser.add_argument(
-        "--auto_confirm", action="store_true", help="Automatically confirm all versions (overrides interactive mode)"
-    )
-    parser.add_argument(
         "--max_solution_retries", type=int, default=3, 
         help="Maximum number of retries for solution generation (default: 3)"
     )
@@ -800,8 +761,6 @@ def main():
         max_new_tokens=args.max_tokens,
         temperature=args.temperature,
         num_return_sequences=args.num_return_sequences,
-        interactive=args.interactive,
-        auto_confirm=args.auto_confirm,
         max_solution_retries=args.max_solution_retries
     )
 
@@ -822,30 +781,30 @@ def main():
 
         # Show examples and summary
         print(f"\n📋 Example ambiguity pairs:")
-            
-            # Show first few examples
-            for i, entry in enumerate(ambiguous_data[:3]):
-                print(f"\n  🎯 Task {i + 1}:")
-                original_task = entry['extra_info']['original_task']
+        
+        # Show first few examples
+        for i, entry in enumerate(ambiguous_data[:3]):
+            print(f"\n  🎯 Task {i + 1}:")
+            original_task = entry['extra_info']['original_task']
             ambiguous_prompt = entry['extra_info']['question']
             true_intent = entry['extra_info']['explicit_task']
             canonical_solution = entry['extra_info'].get('generated_solution', 'N/A')
             unit_tests = entry['extra_info'].get('generated_tests', 'N/A')
-            print(f"    Original: {original_task[:80]}...")
-            print(f"    Ambiguous: {ambiguous_prompt[:80]}...")
-            print(f"    True Intent: {true_intent[:80]}...")
-            print(f"    Solution: {canonical_solution[:80] if isinstance(canonical_solution, str) else 'Generated'}...")
+            print(f"    Original: {original_task}...")
+            print(f"    Ambiguous: {ambiguous_prompt}...")
+            print(f"    True Intent: {true_intent}...")
+            print(f"    Solution: {canonical_solution}...")
             # Count clean assert statements
             if isinstance(unit_tests, list) and unit_tests:
                 test_count = len(unit_tests)
                 print(f"    Tests: {test_count} assert statements")
             else:
                 print(f"    Tests: 0 assert statements")
-            
-            # Show summary statistics
-            print(f"\n📊 Generation Summary:")
-            print(f"  Total entries generated: {len(ambiguous_data)}")
-            print(f"  Original tasks processed: {len(set(entry['extra_info']['index'] for entry in ambiguous_data))}")
+        
+        # Show summary statistics
+        print(f"\n📊 Generation Summary:")
+        print(f"  Total entries generated: {len(ambiguous_data)}")
+        print(f"  Original tasks processed: {len(set(entry['extra_info']['index'] for entry in ambiguous_data))}")
         print(f"  Total ambiguity sets: {len(set((entry['extra_info']['index'], entry['extra_info']['ambiguity_set_index']) for entry in ambiguous_data))}")
         print(f"  Average intents per ambiguity set: {len(ambiguous_data) / len(set((entry['extra_info']['index'], entry['extra_info']['ambiguity_set_index']) for entry in ambiguous_data)):.1f}")
         
@@ -857,18 +816,18 @@ def main():
         print(f"  Max solution retries: {args.max_solution_retries}")
         print(f"  Generation method: Two-step (solution → tests)")
         
-            print(f"  Similarity filtering: {'enabled' if generator.use_similarity_filtering else 'disabled'}")
-            if generator.use_similarity_filtering:
-                print(f"  Similarity threshold: {generator.similarity_threshold}")
-            print(f"  Interactive mode: {'enabled' if args.interactive else 'disabled'}")
-            print(f"  Auto-confirm: {'enabled' if args.auto_confirm else 'disabled'}")
-            
-            # Show data structure info
-            example = ambiguous_data[0]
-            print(f"\n📋 Data Structure:")
-            print(f"  Data Source: {example['data_source']}")
-            print(f"  Reward Model Style: {example['reward_model']['style']}")
-            print(f"  System Instruction Type: {example['system_instruction_type']}")
+        print(f"  Similarity filtering: {'enabled' if generator.use_similarity_filtering else 'disabled'}")
+        if generator.use_similarity_filtering:
+            print(f"  Similarity threshold: {generator.similarity_threshold}")
+        print(f"  Interactive mode: disabled")
+        print(f"  Auto-confirm: enabled")
+        
+        # Show data structure info
+        example = ambiguous_data[0]
+        print(f"\n📋 Data Structure:")
+        print(f"  Data Source: {example['data_source']}")
+        print(f"  Reward Model Style: {example['reward_model']['style']}")
+        print(f"  System Instruction Type: {example['system_instruction_type']}")
         print(f"  Ambiguity Type: {example['extra_info']['ambiguity_type']}")
         print(f"  Has Generated Solution: {'Yes' if example['extra_info'].get('generated_solution') else 'No'}")
         print(f"  Has Generated Tests: {'Yes' if example['extra_info'].get('generated_tests') else 'No'}")

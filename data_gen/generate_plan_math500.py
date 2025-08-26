@@ -69,10 +69,18 @@ def generate_plan_interleaved_math_trace(
 
         thinking_response = generator.generate_thoughts(
             messages,
-            max_new_tokens=max_new_tokens_per_turn * 2,
+            max_new_tokens=512,
             temperature=temperature,
             top_p=top_p,
         )[0]
+
+        # Sanity check: ensure thinking response is > 20 tokens
+        thinking_tokens = len(thinking_response.split())
+        if thinking_tokens <= 20:
+            print(f"⚠️  Warning: Thinking response too short ({thinking_tokens} tokens)")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Thinking response: {thinking_tokens} tokens")
 
         messages.append({"role": "user", "content": thinking_response})
 
@@ -85,6 +93,14 @@ def generate_plan_interleaved_math_trace(
             temperature=temperature,
             top_p=top_p,
         )[0]
+
+        # Sanity check: ensure plan response is > 20 tokens
+        plan_tokens = len(plan_response.split())
+        if plan_tokens <= 20:
+            print(f"⚠️  Warning: Plan response too short ({plan_tokens} tokens)")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Plan response: {plan_tokens} tokens")
 
         messages.append({"role": "user", "content": plan_response})
 
@@ -99,6 +115,14 @@ def generate_plan_interleaved_math_trace(
             temperature=temperature,
             top_p=top_p,
         )[0]
+
+        # Sanity check: ensure implementation thinking response is > 20 tokens
+        impl_thinking_tokens = len(implementation_thinking_response.split())
+        if impl_thinking_tokens <= 20:
+            print(f"⚠️  Warning: Implementation thinking response too short ({impl_thinking_tokens} tokens)")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Implementation thinking response: {impl_thinking_tokens} tokens")
 
         messages.append({"role": "user", "content": implementation_thinking_response})
 
@@ -255,7 +279,7 @@ def main():
             example = math_data[0]
             print(f"\n📋 Example trace structure:")
             print(f"  Data Source: {example['data_source']}")
-            print(f"  Question: {example['prompt'][:100]}...")
+            print(f"  Question: {example['prompt'][:20]}...")
             print(f"  Reward Model Style: {example['reward_model']['style']}")
     else:
         print("❌ No data generated")

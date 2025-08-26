@@ -8,6 +8,7 @@ import json
 import argparse
 from pathlib import Path
 from typing import List, Dict, Any
+import re
 
 
 def create_math500_html_visualization(results: List[Dict], output_file: str):
@@ -110,12 +111,27 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             font-size: 18px;
             opacity: 0.7;
         }
-        .generated-solution-section {
+        .generated-answer-section {
             margin: 15px 0;
         }
-        .generated-solution-text {
+        .generated-answer-text {
             background: #f8f9fa;
             border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 13px;
+            line-height: 1.4;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .thinking-section {
+            margin: 15px 0;
+        }
+        .thinking-text {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
             border-radius: 4px;
             padding: 15px;
             font-family: monospace;
@@ -151,6 +167,17 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             font-weight: bold;
             color: #28a745;
         }
+        .metrics-grid .metric-item .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 6px;
+        }
+        .badge.yes { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .badge.no { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .metrics-grid .metric-item small { color: #666; }
+        .metrics-grid .metric-item small code { background: #f1f3f5; padding: 0 4px; border-radius: 3px; }
         .problem-categories {
             margin-top: 20px;
         }
@@ -231,9 +258,7 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             font-size: 18px;
             transition: transform 0.3s ease;
         }
-        .collapsed .toggle-icon {
-            transform: rotate(-90deg);
-        }
+        .collapsed .toggle-icon { transform: rotate(-90deg); }
         .interleaved-flow {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
@@ -275,25 +300,10 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             font-size: 12px;
             transition: background-color 0.2s;
         }
-        .toggle-component:hover {
-            background: #5a6268;
-        }
-        .component-content {
-            display: block;
-            padding: 10px;
-            background: white;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-        .component-content.collapsed {
-            display: none;
-        }
-        .think-content, .answer-content {
-            font-family: monospace;
-            white-space: pre-wrap;
-            font-size: 13px;
-            line-height: 1.4;
-        }
+        .toggle-component:hover { background: #5a6268; }
+        .component-content { display: block; padding: 10px; background: white; border-radius: 4px; margin-top: 10px; }
+        .component-content.collapsed { display: none; }
+        .think-content, .answer-content { font-family: monospace; white-space: pre-wrap; font-size: 13px; line-height: 1.4; }
         .problem-metrics {
             margin-bottom: 20px;
             padding: 15px;
@@ -301,67 +311,18 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             border: 1px solid #e9ecef;
             border-radius: 6px;
         }
-        .metric-badges {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .metric-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            text-align: center;
-            white-space: nowrap;
-            border: 1px solid;
-        }
-        .ttft-badge {
-            background: #e3f2fd;
-            border-color: #2196f3;
-            color: #1565c0;
-        }
-        .token-badge {
-            background: #f3e5f5;
-            border-color: #9c27b0;
-            color: #7b1fa2;
-        }
-        .completion-badge {
-            background: #e8f5e8;
-            border-color: #4caf50;
-            color: #2e7d32;
-        }
-        .completion-badge:has(.task-incomplete) {
-            background: #ffebee;
-            border-color: #f44336;
-            color: #c62828;
-        }
-        .solution-status {
-            margin: 15px 0;
-            padding: 15px;
-            border-radius: 6px;
-            font-weight: bold;
-            text-align: center;
-            font-size: 18px;
-        }
-        .solution-status.correct {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        .solution-status.incorrect {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-        .autorater-explanation {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 15px 0;
-            font-style: italic;
-        }
+        .metric-badges { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .metric-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; text-align: center; white-space: nowrap; border: 1px solid; }
+        .ttft-badge { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+        .token-badge { background: #f3e5f5; border-color: #9c27b0; color: #7b1fa2; }
+        .total-tokens-badge { background: #fff3e0; border-color: #ff9800; color: #e65100; }
+        .tokens-to-answer-badge { background: #e8f5e8; border-color: #4caf50; color: #2e7d32; }
+        .completion-badge { background: #e8f5e8; border-color: #4caf50; color: #2e7d32; }
+        .completion-badge:has(.task-incomplete) { background: #ffebee; border-color: #f44336; color: #c62828; }
+        .solution-status { margin: 15px 0; padding: 15px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 18px; }
+        .solution-status.correct { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .solution-status.incorrect { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .autorater-explanation { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 15px; margin: 15px 0; font-style: italic; }
     </style>
 </head>
 <body>
@@ -400,6 +361,25 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
     min_ttft = min(ttft_values) if ttft_values else 0
     max_ttft = max(ttft_values) if ttft_values else 0
 
+    # Calculate total tokens generated statistics
+    total_tokens_values = [
+        r.get("total_tokens_generated", 0)
+        for r in results
+        if r.get("total_tokens_generated") is not None and r.get("total_tokens_generated") != "N/A"
+    ]
+    total_tokens_sum = sum(total_tokens_values) if total_tokens_values else 0
+    avg_total_tokens = total_tokens_sum / len(total_tokens_values) if total_tokens_values else 0
+    
+    # Calculate tokens to first answer statistics
+    tokens_to_answer_values = [
+        r.get("tokens_to_first_answer", 0)
+        for r in results
+        if r.get("tokens_to_first_answer") is not None and r.get("tokens_to_first_answer") != "N/A"
+    ]
+    avg_tokens_to_answer = sum(tokens_to_answer_values) / len(tokens_to_answer_values) if tokens_to_answer_values else 0
+    min_tokens_to_answer = min(tokens_to_answer_values) if tokens_to_answer_values else 0
+    max_tokens_to_answer = max(tokens_to_answer_values) if tokens_to_answer_values else 0
+
     # Categorize problems
     correct_solutions = [r for r in results if r.get("solution_correct", False)]
     incorrect_solutions = [r for r in results if not r.get("solution_correct", False)]
@@ -428,6 +408,25 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             </div>
             <div class="metric-item">
                 <strong>Max TTFT:</strong> <span class="ttft-badge">{max_ttft:.2f}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Total Tokens Generated:</strong> <span class="total-tokens-badge">{total_tokens_sum:,}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Average Total Tokens:</strong> <span class="total-tokens-badge">{avg_total_tokens:.0f}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Average Tokens to Answer:</strong> <span class="tokens-to-answer-badge">{avg_tokens_to_answer:.1f}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Min Tokens to Answer:</strong> <span class="tokens-to-answer-badge">{min_tokens_to_answer:.0f}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Max Tokens to Answer:</strong> <span class="tokens-to-answer-badge">{max_tokens_to_answer:.0f}</span>
+            </div>
+            <div class="metric-item">
+                <strong>Thinking Enabled:</strong>
+                <span class="badge yes">Yes</span> <small>(detected per-response via <code><think></code>)</small>
             </div>
         </div>
         
@@ -483,14 +482,26 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
         </div>
 """
 
+    # Helper to extract thinking content for default template
+    def extract_thinking_from_full_response(full_response: str) -> str:
+        if not isinstance(full_response, str) or not full_response:
+            return ""
+        # Extract the first <think>...</think> block
+        match = re.search(r"<think>(.*?)</think>", full_response, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return ""
+
     # Generate problem details
     for i, result in enumerate(results):
         problem_id = result["problem_id"]
-        problem = result["problem"]
-        generated_solution = result["generated_code"]
-        ground_truth_answer = result["ground_truth_answer"]
+        problem = result.get("problem", result.get("prompt", ""))
+        generated_answer = result.get("generated_code", "")
+        full_response = result.get("full_response", "")
+        ground_truth_answer = result.get("ground_truth_answer", "")
         solution_correct = result.get("solution_correct", False)
         interleaved_components = result.get("interleaved_components", [])
+        template_type = result.get("template_type", "default")
 
         html_content += f"""
     <div class="problem-container">
@@ -505,8 +516,14 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
                     <span class="metric-badge ttft-badge" title="Time to First Token Ratio - Lower is better">
                         🚀 TTFT: {result.get("ttft_ratio", 0):.3f}
                     </span>
-                    <span class="metric-badge token-badge" title="Number of tokens generated">
-                        📊 Tokens: {result.get("num_tokens", "N/A")}
+                    <span class="metric-badge token-badge" title="Number of tokens in final response">
+                        📊 Response: {result.get("num_tokens", "N/A")}
+                    </span>
+                    <span class="metric-badge total-tokens-badge" title="Total tokens generated across all attempts (including rewind)">
+                        🔄 Total: {result.get("total_tokens_generated", "N/A")}
+                    </span>
+                    <span class="metric-badge tokens-to-answer-badge" title="Number of tokens to first answer">
+                        🎯 To Answer: {result.get("tokens_to_first_answer", "N/A")}
                     </span>
                     <span class="metric-badge completion-badge" title="Task completion status">
                         {"✅" if result.get("task_completed", False) else "❌"} Task Complete
@@ -526,8 +543,8 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             </div>
 """
 
-        # Show interleaved components if available (plan_first template)
-        if interleaved_components and len(interleaved_components) > 0:
+        # Interleaved (plan_first): show think/answer flow
+        if interleaved_components and len(interleaved_components) > 0 and template_type == "plan_first":
             html_content += f"""
             <div class="interleaved-flow">
                 <h4>🔄 Generation Flow ({len(interleaved_components)} components)</h4>
@@ -560,19 +577,22 @@ def create_math500_html_visualization(results: List[Dict], output_file: str):
             html_content += """
             </div>
 """
-
-        html_content += f"""
-            <div class="generated-solution-section">
-                <h4>🤖 Generated Solution</h4>
-                <div class="generated-solution-text">{generated_solution}</div>
+        else:
+            # Default template: show thinking block if present
+            thinking_text = extract_thinking_from_full_response(full_response)
+            if thinking_text:
+                html_content += f"""
+            <div class="thinking-section">
+                <h4>💭 Thinking</h4>
+                <div class="thinking-text">{thinking_text}</div>
             </div>
 """
 
-        # Show autorater explanation if available
-        if result.get("autorater_explanation"):
-            html_content += f"""
-            <div class="autorater-explanation">
-                <strong>📝 Autorater Explanation:</strong> {result["autorater_explanation"]}
+        # Dedicated Generated Answer section (extracted content)
+        html_content += f"""
+            <div class="generated-answer-section">
+                <h4>✅ Generated Answer</h4>
+                <div class="generated-answer-text">{generated_answer}</div>
             </div>
 """
 

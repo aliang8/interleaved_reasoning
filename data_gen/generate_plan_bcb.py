@@ -8,6 +8,7 @@ Usage: python data_gen/generate_plan_bcb.py --output_dir data --num_samples 50
 """
 
 import argparse
+from sys import implementation
 from typing import List, Dict, Any
 import os
 from tqdm import tqdm
@@ -21,7 +22,7 @@ from create_parquets import ADDITIONAL_INSTRUCTION
 
 # Prompt configurations for plan-first approach
 PLAN_CODING_PROMPTS = {
-    "plan_thought": "Let me start by thinking about this problem. What are the requirements, constraints, and what approach should I take? Begin with <think> and end with </think>.",
+    "plan_thought": "Start by thinking about this problem. What are the requirements, constraints, and what approach should I take? Begin with <think> and end with </think>. Only think about the plan / approach for the problem.",
     "plan_answer": """Now create a high-level plan for solving this problem in <answer></answer> tags. Your plan should:
 
 1. Break down the problem into clear, sequential steps
@@ -29,24 +30,9 @@ PLAN_CODING_PROMPTS = {
 3. Consider edge cases and error handling
 4. Outline the overall structure and flow
 
-Provide a numbered list of high-level steps to solve this problem. Keep it simple and concise. Do not include any other text.
-
-Example:
-1. Parse the input data
-2. Validate the requirements  
-3. Design the data structure
-4. Implement the core algorithm
-5. Handle edge cases
-6. Return the result""",
-    "implementation_thought": "Now let me think about implementing the plan I just created. How will I translate each step into actual code? What data structures, algorithms, and implementation details do I need? Begin with <think> and end with </think>.",
-    "implementation_answer": """Now implement the complete solution based on the plan in <answer></answer> tags. Follow the plan step by step and provide clean, well-commented code that implements each part of the plan.
-
-Make sure your implementation:
-- Follows the plan structure you outlined
-- Includes proper error handling
-- Has clear comments explaining each step
-- Is efficient and readable
-- Handles all the edge cases mentioned in the plan""",
+Provide a numbered list of high-level steps to solve this problem. Keep it simple and concise. Do not include any other text.""",
+    "implementation_thought": "Think about implementing the plan to solve this problem. Think about how to translate each step into actual code? What data structures, algorithms, and implementation details do you need? Begin with <think> and end with </think>.",
+    "implementation_answer": """Now implement the complete solution based on the plan and the reasoning. Follow the plan step by step and provide clean, well-commented code that implements each part of the plan. Make sure the code is well-formatted. Wrap the code in <answer></answer> tags.""",
 }
 
 
@@ -90,24 +76,40 @@ def generate_plan_interleaved_coding_trace(
 
         thinking_response = generator.generate_thoughts(
             messages,
-            max_new_tokens=max_new_tokens_per_turn,
+            max_new_tokens=512,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
 
-        messages.append({"role": "assistant", "content": thinking_response})
+        # Sanity check: ensure thinking response is > 20 tokens
+        thinking_tokens = len(thinking_response.split())
+        if thinking_tokens <= 20:
+            print(f"⚠️  Warning: Thinking response too short ({thinking_tokens} tokens) for {task_id}")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Thinking response: {thinking_tokens} tokens")
+
+        messages.append({"role": "user", "content": thinking_response})
 
         # Step 2: Generate high-level plan
         messages.append({"role": "user", "content": PLAN_CODING_PROMPTS["plan_answer"]})
 
         plan_response = generator.generate_answer(
             messages,
-            max_new_tokens=max_new_tokens_per_turn * 2,
+            max_new_tokens=512,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
 
-        messages.append({"role": "assistant", "content": plan_response})
+        # Sanity check: ensure plan response is > 20 tokens
+        plan_tokens = len(plan_response.split())
+        if plan_tokens <= 20:
+            print(f"⚠️  Warning: Plan response too short ({plan_tokens} tokens) for {task_id}")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Plan response: {plan_tokens} tokens")
+
+        messages.append({"role": "user", "content": plan_response})
 
         # Step 3: Think about implementation
         messages.append(
@@ -116,13 +118,21 @@ def generate_plan_interleaved_coding_trace(
 
         implementation_thinking_response = generator.generate_thoughts(
             messages,
-            max_new_tokens=max_new_tokens_per_turn,
+            max_new_tokens=max_new_tokens_per_turn * 2,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
+
+        # Sanity check: ensure implementation thinking response is > 20 tokens
+        impl_thinking_tokens = len(implementation_thinking_response.split())
+        if impl_thinking_tokens <= 20:
+            print(f"⚠️  Warning: Implementation thinking response too short ({impl_thinking_tokens} tokens) for {task_id}")
+            import ipdb; ipdb.set_trace()
+        else:
+            print(f"✅ Implementation thinking response: {impl_thinking_tokens} tokens")
 
         messages.append(
-            {"role": "assistant", "content": implementation_thinking_response}
+            {"role": "user", "content": implementation_thinking_response}
         )
 
         # Step 4: Implement the solution based on the plan
@@ -132,15 +142,33 @@ def generate_plan_interleaved_coding_trace(
 
         implementation_response = generator.generate_answer(
             messages,
-            max_new_tokens=max_new_tokens_per_turn * 2,
+            max_new_tokens=max_new_tokens_per_turn,
             temperature=temperature,
             top_p=top_p,
-        )
+        )[0]
 
-        messages.append({"role": "assistant", "content": implementation_response})
+        # make sure the implementation response is wrapped in <answer></answer> tags
+        if not implementation_response.startswith("<answer>"):
+            implementation_response = "<answer>" + implementation_response + "</answer>"
+        
+        implementation_response = implementation_response.replace("```python", "")
+        implementation_response = implementation_response.replace("```", "")
+        code = implementation_response.split("<answer>")[1].split("</answer>")[0]
+        implementation_response = f"<answer>```python\n{code}\n```</answer>"
+
+        messages.append({"role": "user", "content": implementation_response})
+        print(f"✅ Implementation response: {len(implementation_response.split())} tokens")
+
 
         # Build complete interleaved response
         full_interleaved = f"{thinking_response}\n\n{plan_response}\n\n{implementation_thinking_response}\n\n{implementation_response}"
+
+        print("Problem:")
+        print(prompt)
+        print("Plan:")
+        print(plan_response)
+        print("Implementation:")
+        print(implementation_response)
 
         return {
             "task_id": task_id,
@@ -153,6 +181,7 @@ def generate_plan_coding_dataset(
     generator: InterleavedResponsesGenerator,
     num_samples: int = 50,
     max_new_tokens_per_turn: int = 512,
+    temperature: float = 0.6,
 ) -> List[Dict[str, Any]]:
     """Generate plan-first interleaved coding traces for multiple problems."""
     print(
@@ -174,17 +203,18 @@ def generate_plan_coding_dataset(
 
         # Generate interleaved trace
         trace_data = generate_plan_interleaved_coding_trace(
-            generator, problem, max_new_tokens_per_turn=max_new_tokens_per_turn
+            generator, problem, max_new_tokens_per_turn=max_new_tokens_per_turn, temperature=temperature        
         )
 
         # Create standardized reward model
         reward_model = StandardizedRewardModel(
-            ground_truth=[problem["canonical_solution"]],
+            ground_truth=[problem.get("canonical_solution", "")],
             style="code",
-            unit_tests=[problem["test"]],
-            libs=[problem["libs"]],
+            unit_tests=[problem.get("test", "")],
+            libs=[problem.get("libs", [])],
         )
 
+        # Standardized entry structure (aligned with math plan-first generator)
         result_entry = {
             "data_source": "bcb_plan_code_interleave",
             "prompt": trace_data["prompt"],
@@ -196,6 +226,9 @@ def generate_plan_coding_dataset(
                 "index": i,
                 "question": [trace_data["prompt"]],
                 "answer": [trace_data["full_response"]],
+                "template_type": trace_data.get("template_type", "plan_first"),
+                "interleaved": trace_data.get("interleaved", True),
+                "task_id": trace_data.get("task_id", "Unknown"),
             },
         }
 
@@ -255,6 +288,7 @@ def main():
         generator,
         num_samples=args.num_samples,
         max_new_tokens_per_turn=args.max_tokens_per_turn,
+        temperature=args.temperature,
     )
 
     if coding_data:
@@ -277,8 +311,9 @@ def main():
             example = coding_data[0]
             print(f"\n📋 Example trace structure:")
             print(f"  Data Source: {example['data_source']}")
-            print(f"  Question: {example['prompt'][:100]}...")
+            print(f"  Question: {example['prompt'][:20]}...")
             print(f"  Reward Model Style: {example['reward_model']['style']}")
+            print(f"  Template Type: {example['extra_info'].get('template_type')}")
     else:
         print("❌ No data generated")
 

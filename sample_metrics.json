@@ -1,0 +1,15 @@
+{
+  "dataset": "MATH500",
+  "no-thinking": {
+    "avg_token_spent": 852.7,
+    "pass@1": 82.4
+  },
+  "think-answer": {
+    "avg_token_spent": 3355.1,
+    "pass@1": 83.0
+  },
+  "rewind-and-repeat": {
+    "avg_token_spent": 3896.9,
+    "pass@1": 88
+  }
+} 

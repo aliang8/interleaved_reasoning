@@ -87,11 +87,13 @@
         },
         "max_turns": 2,
         "n_candidates": 10,
+        "use_random_selection": false,
+        "random_seed": 42,
         "use_similarity_filtering": true,
         "similarity_threshold": 0.85,
         "enable_iterative_reprompting": false,
         "max_iterative_iterations": 3,
-        "additional_answer_tokens": 100,
+        "additional_answer_tokens": 1024,
         "force_thinking_end": true
     },
     "ref": {
